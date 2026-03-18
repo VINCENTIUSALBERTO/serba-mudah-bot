@@ -15,8 +15,8 @@ from bot.database import (
     increment_user_balance,
     update_topup_status,
 )
-from bot.handlers.admin import is_admin
 from bot.handlers.order import PAYMENT_INFO
+from bot.utils.auth import is_admin
 from bot.utils.formatting import format_currency as _format_currency
 from bot.utils.keyboards import admin_topup_keyboard
 

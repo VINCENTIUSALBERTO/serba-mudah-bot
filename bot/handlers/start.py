@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from bot.database import ensure_user, get_user_balance
-from bot.handlers.admin import is_admin
+from bot.utils.auth import is_admin
 from bot.utils.formatting import format_currency
 from bot.utils.keyboards import main_menu_keyboard, help_keyboard
 

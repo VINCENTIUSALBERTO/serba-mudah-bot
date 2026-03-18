@@ -5,7 +5,6 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
 
-from bot.config import ADMIN_IDS
 from bot.database import (
     add_product,
     bulk_insert_accounts,
@@ -18,6 +17,7 @@ from bot.database import (
     update_product_fields,
 )
 from bot.handlers.order import _deliver_account
+from bot.utils.auth import is_admin
 from bot.utils.keyboards import main_menu_keyboard
 
 logger = logging.getLogger(__name__)
@@ -30,10 +30,6 @@ logger = logging.getLogger(__name__)
     ADD_STOCK_PRODUCT,
     ADD_STOCK_ACCOUNTS,
 ) = range(6)
-
-
-def is_admin(user_id: int) -> bool:
-    return user_id in ADMIN_IDS
 
 
 def _admin_help_text() -> str:

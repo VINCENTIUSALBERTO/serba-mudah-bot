@@ -19,6 +19,7 @@ from bot.database import (
     reserve_product_accounts,
     update_order_status,
 )
+from bot.utils.auth import is_admin
 from bot.utils.formatting import format_currency as _format_currency
 from bot.utils.keyboards import (
     admin_order_keyboard,
@@ -29,6 +30,7 @@ from bot.utils.keyboards import (
 
 logger = logging.getLogger(__name__)
 CONFIRM_PROCESSING = "processing"
+DUPLICATE_PREVENTION_WINDOW = timedelta(minutes=5)
 
 # Payment instructions sent to the buyer after order creation
 PAYMENT_INFO = (
@@ -139,10 +141,10 @@ async def my_orders_callback(
         offset = 0
     offset = max(0, offset)
     page_size = 10
+    page_number = offset // page_size + 1
 
     orders = fetch_user_orders(query.from_user.id, limit=page_size + 1, offset=offset)
-    from bot.handlers.admin import is_admin as _is_admin  # local import to avoid circular dependency
-    is_admin_user = _is_admin(query.from_user.id)
+    is_admin_user = is_admin(query.from_user.id)
 
     if not orders:
         await query.edit_message_text(
@@ -157,7 +159,7 @@ async def my_orders_callback(
 
     lines = [
         "📦 *Pesanan Saya*",
-        f"Menampilkan {len(visible_orders)} pesanan (halaman {offset // page_size + 1}, urut terbaru).\n",
+        f"Menampilkan {len(visible_orders)} pesanan (halaman {page_number}, urut terbaru).\n",
     ]
     for o in visible_orders:
         product_info = o.get("products") or {}
@@ -352,7 +354,7 @@ async def confirm_balance_payment_callback(
         created_at = _parse_datetime(recent.get("created_at"))
         within_duplicate_window = True
         if created_at:
-            within_duplicate_window = (datetime.now(timezone.utc) - created_at) < timedelta(minutes=5)
+            within_duplicate_window = (datetime.now(timezone.utc) - created_at) < DUPLICATE_PREVENTION_WINDOW
         else:
             # If timestamp is missing, err on the safe side by treating it as a recent action.
             within_duplicate_window = True
