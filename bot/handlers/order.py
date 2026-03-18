@@ -299,7 +299,6 @@ def _parse_datetime(raw: str | None) -> datetime | None:
             return datetime.fromisoformat(raw.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return None
 
 
 async def confirm_balance_payment_callback(
