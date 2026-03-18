@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.database import fetch_catalog, fetch_product
+from bot.database import ensure_user, fetch_catalog, fetch_product, get_user_balance
 from bot.utils.keyboards import catalog_keyboard, product_detail_keyboard
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,10 @@ async def catalog_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     query = update.callback_query
     await query.answer()
 
+    ensure_user(query.from_user.id, query.from_user.username)
+    balance = get_user_balance(query.from_user.id)
+    context.user_data["balance"] = balance
+
     products = fetch_catalog()
     if not products:
         await query.edit_message_text("😔 Belum ada produk yang tersedia saat ini.")
@@ -24,7 +28,7 @@ async def catalog_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     text = (
         "👤 *User Profile*\n"
         f"Nama: {query.from_user.name}\n"
-        f"Saldo: Rp {context.user_data.get('balance', 0):,}\n\n"
+        f"Saldo: Rp {balance:,}\n\n"
        "🛒 *Katalog Produk*\nPilih produk yang ingin kamu beli: ")
 
     await query.edit_message_text(
@@ -41,6 +45,10 @@ async def product_detail_callback(
     query = update.callback_query
     await query.answer()
 
+    ensure_user(query.from_user.id, query.from_user.username)
+    balance = get_user_balance(query.from_user.id)
+    context.user_data["balance"] = balance
+
     product_id = int(query.data.split("_")[1])
     product = fetch_product(product_id)
 
@@ -51,7 +59,7 @@ async def product_detail_callback(
     text = (
         "👤 *User Profile*\n"
         f"Nama: {query.from_user.name}\n"
-        f"Saldo: Rp {context.user_data.get('balance', 0):,}\n\n"
+        f"Saldo: Rp {balance:,}\n\n"
         f"📦 *{product['name']}*\n\n"
         f"💰 Harga: Rp {product['price']:,}\n"
         f"📝 Deskripsi: {product.get('description', '-')}\n\n"
