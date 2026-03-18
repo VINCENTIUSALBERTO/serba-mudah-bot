@@ -166,14 +166,28 @@ def attach_topup_proof(topup_id: int, proof_message_id: int) -> dict | None:
     return response.data[0] if response.data else None
 
 
-def create_order(user_id: int, product_id: int, username: str | None = None) -> dict:
+def create_order(
+    user_id: int,
+    product_id: int,
+    username: str | None = None,
+    *,
+    quantity: int = 1,
+    payment_method: str | None = None,
+    total_price: int | None = None,
+) -> dict:
     """Insert a new order and return the created row."""
     payload = {
         "user_id": user_id,
         "product_id": product_id,
         "username": username,
         "status": "pending",
+        "quantity": max(1, int(quantity if quantity is not None else 1)),
     }
+    if payment_method:
+        payload["payment_method"] = payment_method
+    if total_price is not None:
+        payload["total_price"] = total_price
+
     response = get_client().table("orders").insert(payload).execute()
     return response.data[0]
 
@@ -287,21 +301,38 @@ def bulk_insert_accounts(product_id: int, accounts: list[str]) -> list[dict]:
     return response.data or []
 
 
-def reserve_product_account(product_id: int, order_id: int | None = None) -> dict | None:
-    """Reserve the first available account for a product and mark it sold."""
+def get_available_stock(product_id: int) -> int:
+    """Return available (unsold) stock for a product."""
+    response = (
+        get_client()
+        .table("product_accounts")
+        .select("id", count="exact")
+        .eq("product_id", product_id)
+        .eq("is_sold", False)
+        .execute()
+    )
+    return int(response.count or 0)
+
+
+def reserve_product_accounts(
+    product_id: int, count: int = 1, order_id: int | None = None
+) -> list[dict]:
+    """Reserve multiple accounts. Returns empty list if stock insufficient."""
+    count = max(1, int(count if count is not None else 1))
     candidate = (
         get_client()
         .table("product_accounts")
         .select("*")
         .eq("product_id", product_id)
         .eq("is_sold", False)
-        .limit(1)
+        .limit(count)
         .execute()
     )
-    if not candidate.data:
-        return None
+    accounts = candidate.data or []
+    if len(accounts) < count:
+        return []
 
-    account = candidate.data[0]
+    ids = [acc["id"] for acc in accounts]
     update_payload = {"is_sold": True}
     if order_id is not None:
         update_payload["order_id"] = order_id
@@ -310,7 +341,13 @@ def reserve_product_account(product_id: int, order_id: int | None = None) -> dic
         get_client()
         .table("product_accounts")
         .update(update_payload)
-        .eq("id", account["id"])
+        .in_("id", ids)
         .execute()
     )
-    return updated.data[0] if updated.data else account
+    return updated.data or accounts
+
+
+def reserve_product_account(product_id: int, order_id: int | None = None) -> dict | None:
+    """Reserve the first available account for a product and mark it sold."""
+    accounts = reserve_product_accounts(product_id, 1, order_id)
+    return accounts[0] if accounts else None

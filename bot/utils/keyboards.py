@@ -16,17 +16,18 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def catalog_keyboard(products: list[dict]) -> InlineKeyboardMarkup:
+def catalog_keyboard(products: list[dict], stock_map: dict[int, int] | None = None) -> InlineKeyboardMarkup:
     """Build a keyboard with one button per product."""
-    buttons = [
-        [
-            InlineKeyboardButton(
-                f"{p['name']} — Rp {p['price']:,}",
-                callback_data=f"product_{p['id']}",
-            )
-        ]
-        for p in products
-    ]
+    buttons = []
+    for p in products:
+        available = (stock_map or {}).get(p["id"], 0)
+        if available <= 0:
+            label = f"❌ {p['name']} — Stok habis"
+            callback = f"stockout_{p['id']}"
+        else:
+            label = f"{p['name']} — Rp {p['price']:,} (Stok: {available})"
+            callback = f"product_{p['id']}"
+        buttons.append([InlineKeyboardButton(label, callback_data=callback)])
     buttons.append([InlineKeyboardButton("🔙 Kembali", callback_data="main_menu")])
     return InlineKeyboardMarkup(buttons)
 
@@ -47,16 +48,29 @@ def order_history_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 
-def product_detail_keyboard(product_id: int) -> InlineKeyboardMarkup:
+def product_detail_keyboard(
+    product_id: int, quantity: int = 1, available: int = 0, total_price: int | None = None
+) -> InlineKeyboardMarkup:
     """Keyboard shown on a product-detail page."""
+    if available <= 0:
+        return InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("❌ Stok habis", callback_data=f"stockout_{product_id}")],
+                [InlineKeyboardButton("🔙 Kembali", callback_data="catalog")],
+            ]
+        )
+
+    total_suffix = f" (Rp {total_price:,})" if total_price is not None else ""
     buttons = [
         [
             InlineKeyboardButton("➖", callback_data=f"decrease_{product_id}"),
-            InlineKeyboardButton("1", callback_data="quantity_placeholder"),
+            InlineKeyboardButton(str(max(1, quantity)), callback_data="quantity_placeholder"),
             InlineKeyboardButton("➕", callback_data=f"increase_{product_id}"),
         ],
         [
-            InlineKeyboardButton("💰 Saldo", callback_data=f"pay_balance_{product_id}"),
+            InlineKeyboardButton(
+                f"💰 Saldo{total_suffix}", callback_data=f"pay_balance_{product_id}"
+            ),
             InlineKeyboardButton("💳 QRIS", callback_data=f"pay_qris_{product_id}"),
         ],
         [InlineKeyboardButton("🔙 Kembali", callback_data="catalog")],

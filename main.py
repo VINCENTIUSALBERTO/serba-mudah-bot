@@ -21,21 +21,30 @@ from bot.handlers.admin import (
     ADD_PRODUCT_DESC,
     ADD_PRODUCT_NAME,
     ADD_PRODUCT_PRICE,
+    ADD_STOCK_ACCOUNTS,
+    ADD_STOCK_PRODUCT,
     admin_approve_callback,
     admin_reject_callback,
     admin_stats_command,
+    add_stock_command,
+    add_stock_product,
     add_product_accounts,
     add_product_command,
     add_product_description,
     add_product_price,
+    cancel_add_stock,
     cancel_add_product,
     delete_product_command,
     edit_product_command,
     finalize_add_product,
+    finalize_add_stock,
     list_products_command,
 )
-from bot.handlers.catalog import catalog_callback, product_detail_callback
+from bot.handlers.catalog import catalog_callback, product_detail_callback, stockout_callback
 from bot.handlers.order import (
+    confirm_balance_payment_callback,
+    decrease_quantity_callback,
+    increase_quantity_callback,
     my_orders_callback,
     order_callback,
     pay_with_balance_callback,
@@ -105,6 +114,20 @@ def build_application() -> Application:
             fallbacks=[CommandHandler("cancel", cancel_add_product)],
         )
     )
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("add_stock", add_stock_command)],
+            states={
+                ADD_STOCK_PRODUCT: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_stock_product)
+                ],
+                ADD_STOCK_ACCOUNTS: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), finalize_add_stock)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_add_stock)],
+        )
+    )
     app.add_handler(CommandHandler("edit_product", edit_product_command))
     app.add_handler(CommandHandler("delete_product", delete_product_command))
     app.add_handler(CommandHandler("list_products", list_products_command))
@@ -121,10 +144,18 @@ def build_application() -> Application:
     app.add_handler(
         CallbackQueryHandler(product_detail_callback, pattern=r"^product_\d+$")
     )
+    app.add_handler(CallbackQueryHandler(stockout_callback, pattern=r"^stockout_\d+$"))
+    app.add_handler(CallbackQueryHandler(increase_quantity_callback, pattern=r"^increase_\d+$"))
+    app.add_handler(CallbackQueryHandler(decrease_quantity_callback, pattern=r"^decrease_\d+$"))
 
     # Orders
     app.add_handler(CallbackQueryHandler(order_callback, pattern=r"^order_\d+$"))
     app.add_handler(CallbackQueryHandler(pay_with_balance_callback, pattern=r"^pay_balance_\d+$"))
+    app.add_handler(
+        CallbackQueryHandler(
+            confirm_balance_payment_callback, pattern=r"^confirm_balance_\d+_\d+$"
+        )
+    )
     app.add_handler(CallbackQueryHandler(pay_with_qris_callback, pattern=r"^pay_qris_\d+$"))
     app.add_handler(CallbackQueryHandler(my_orders_callback, pattern="^my_orders$"))
 

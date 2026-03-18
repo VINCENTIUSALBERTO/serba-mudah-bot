@@ -80,7 +80,7 @@ PAYMENT_CHANNEL_ID=-100123456789
 
 ## 🗄️ Skema Database Supabase
 
-Buat dua tabel berikut di Supabase SQL editor:
+Buat tabel berikut di Supabase SQL editor:
 
 ```sql
 -- Tabel produk
@@ -93,13 +93,26 @@ create table products (
   created_at  timestamptz not null default now()
 );
 
--- Tabel pesanan
+-- Tabel pesanan (mendukung multi akun)
 create table orders (
+  id             bigint generated always as identity primary key,
+  user_id        bigint      not null,
+  username       text,
+  product_id     bigint      references products(id),
+  quantity       integer     not null default 1,
+  total_price    numeric,
+  payment_method text,
+  status         text        not null default 'pending',
+  created_at     timestamptz not null default now()
+);
+
+-- Tabel stok akun per produk
+create table product_accounts (
   id          bigint generated always as identity primary key,
-  user_id     bigint      not null,
-  username    text,
   product_id  bigint      references products(id),
-  status      text        not null default 'pending',
+  credential  text        not null,
+  is_sold     boolean     not null default false,
+  order_id    bigint      references orders(id),
   created_at  timestamptz not null default now()
 );
 
@@ -138,19 +151,23 @@ python main.py
 |---|---|
 | `/start` | Tampilkan menu utama |
 | Katalog produk | Daftar produk aktif dari Supabase |
-| Detail produk | Harga & deskripsi |
+| Indikator stok | Tombol produk menampilkan ❌ saat stok habis |
+| Detail produk | Harga, deskripsi, stok, dan atur jumlah beli |
 | Pesan produk | Buat pesanan & kirim instruksi bayar |
 | Pesanan saya | Riwayat pembelian pengguna |
 | Notifikasi admin | Kirim detail pesanan ke channel admin |
-| Setujui/Tolak pesanan | Tombol aksi khusus admin |
+| Setujui/Tolak pesanan | Tombol aksi khusus admin (untuk pembayaran QRIS/manual) |
 | `/stats` (admin) | Statistik bot |
 | `/balance` / `/saldo` | Cek saldo pengguna |
 | `/topup <nominal>` | Ajukan top-up saldo, kirim bukti transfer, admin approve |
 | `/addsaldo <user_id> <nominal>` (admin) | Tambah saldo pengguna secara langsung |
-| `/add_product` (admin) | Tambah produk baru via alur tanya-jawab + stok akun |
+| `/add_product` (admin) | Tambah produk baru via alur tanya-jawab + stok akun (setiap pertanyaan ada petunjuk /cancel) |
+| `/add_stock` (admin) | Tambah stok akun ke produk yang sudah ada |
 | `/edit_product` (admin) | Ubah harga/deskripsi produk |
 | `/delete_product` (admin) | Nonaktifkan/hapus produk |
 | `/list_products` (admin) | Lihat semua produk (termasuk nonaktif) |
-| Pembayaran saldo | Potong saldo otomatis bila mencukupi |
+| Pembayaran saldo | Konfirmasi dengan resi saldo, potong saldo otomatis bila mencukupi |
 | Pembayaran QRIS (demo) | Tampilkan QR code + detail produk, admin verifikasi |
-| Auto-delivery | Akun dikirim otomatis setelah pembayaran sukses |
+| Multi akun per transaksi | Pengguna bisa membeli beberapa akun sekaligus |
+| Auto-delivery | Akun dikirim otomatis setelah pembayaran saldo sukses |
+| Notifikasi top up | Channel mendapat notifikasi saat top up disetujui |

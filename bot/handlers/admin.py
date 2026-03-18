@@ -12,6 +12,7 @@ from bot.database import (
     fetch_all_products,
     fetch_order,
     fetch_product,
+    get_available_stock,
     soft_delete_product,
     update_order_status,
     update_product_fields,
@@ -25,7 +26,9 @@ logger = logging.getLogger(__name__)
     ADD_PRODUCT_PRICE,
     ADD_PRODUCT_DESC,
     ADD_PRODUCT_ACCOUNTS,
-) = range(4)
+    ADD_STOCK_PRODUCT,
+    ADD_STOCK_ACCOUNTS,
+) = range(6)
 
 
 def is_admin(user_id: int) -> bool:
@@ -124,7 +127,7 @@ async def add_product_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
 
     context.user_data["add_product"] = {}
-    await update.message.reply_text("🆕 Nama produk?")
+    await update.message.reply_text("🆕 Nama produk? (Ketik /cancel untuk membatalkan)")
     return ADD_PRODUCT_NAME
 
 
@@ -135,7 +138,7 @@ async def add_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await update.message.reply_text("Nama produk tidak boleh kosong. Coba lagi.")
         return ADD_PRODUCT_NAME
     context.user_data.setdefault("add_product", {})["name"] = name
-    await update.message.reply_text("💰 Harga produk? (angka)")
+    await update.message.reply_text("💰 Harga produk? (angka)\n/cancel untuk membatalkan")
     return ADD_PRODUCT_PRICE
 
 
@@ -148,7 +151,7 @@ async def add_product_description(update: Update, context: ContextTypes.DEFAULT_
         return ADD_PRODUCT_PRICE
 
     context.user_data.setdefault("add_product", {})["price"] = price
-    await update.message.reply_text("📝 Deskripsi produk?")
+    await update.message.reply_text("📝 Deskripsi produk?\n/cancel untuk membatalkan")
     return ADD_PRODUCT_DESC
 
 
@@ -158,7 +161,8 @@ async def add_product_accounts(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.setdefault("add_product", {})["description"] = description
     await update.message.reply_text(
         "📧 Kirim akun (satu per baris) dengan format `email:pass`.\n"
-        "Akun akan otomatis dikirim ke pembeli setelah pembayaran berhasil.",
+        "Akun akan otomatis dikirim ke pembeli setelah pembayaran berhasil.\n\n"
+        "_Ketik /cancel untuk membatalkan._",
         parse_mode="Markdown",
     )
     return ADD_PRODUCT_ACCOUNTS
@@ -272,6 +276,77 @@ async def delete_product_command(update: Update, context: ContextTypes.DEFAULT_T
         return
 
     await update.message.reply_text(f"🗑️ Produk ID {product_id} dinonaktifkan.")
+
+
+async def add_stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Admin: start flow to add more stock to an existing product."""
+    if not is_admin(update.effective_user.id):
+        await update.message.reply_text("⛔ Perintah ini hanya untuk admin.")
+        return ConversationHandler.END
+
+    context.user_data["add_stock"] = {}
+    await update.message.reply_text(
+        "🆕 Masukkan ID produk yang ingin ditambah stoknya.\n/cancel untuk membatalkan"
+    )
+    return ADD_STOCK_PRODUCT
+
+
+async def add_stock_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Capture product ID for stock addition."""
+    try:
+        product_id = int((update.message.text or "").strip())
+    except ValueError:
+        await update.message.reply_text("ID produk harus berupa angka. Coba lagi.")
+        return ADD_STOCK_PRODUCT
+
+    product = fetch_product(product_id)
+    if not product:
+        await update.message.reply_text("❌ Produk tidak ditemukan. Masukkan ID lain atau /cancel.")
+        return ADD_STOCK_PRODUCT
+
+    context.user_data.setdefault("add_stock", {})["product_id"] = product_id
+    await update.message.reply_text(
+        "📧 Kirim akun baru (satu per baris) dengan format `email:pass`.\n"
+        "Ketik /cancel untuk membatalkan.",
+        parse_mode="Markdown",
+    )
+    return ADD_STOCK_ACCOUNTS
+
+
+async def finalize_add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Insert provided accounts as new stock for a product."""
+    data = context.user_data.get("add_stock") or {}
+    product_id = data.get("product_id")
+    if not product_id:
+        await update.message.reply_text("Data produk tidak ditemukan. Silakan ulangi /add_stock.")
+        return ConversationHandler.END
+
+    accounts_raw = update.message.text or ""
+    accounts = [line.strip() for line in accounts_raw.splitlines() if line.strip()]
+    if not accounts:
+        await update.message.reply_text("Tidak ada akun yang dikirim. /cancel untuk batal atau kirim ulang.")
+        return ADD_STOCK_ACCOUNTS
+
+    try:
+        inserted = bulk_insert_accounts(product_id, accounts)
+    except Exception as exc:  # pragma: no cover
+        logger.error("Failed to insert new stock for product %s: %s", product_id, exc)
+        inserted = []
+
+    new_stock = get_available_stock(product_id)
+    await update.message.reply_text(
+        f"✅ {len(inserted)} akun baru ditambahkan ke produk ID {product_id}.\n"
+        f"Stok tersedia sekarang: {new_stock}"
+    )
+    context.user_data.pop("add_stock", None)
+    return ConversationHandler.END
+
+
+async def cancel_add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel add stock flow."""
+    context.user_data.pop("add_stock", None)
+    await update.message.reply_text("❌ Penambahan stok dibatalkan.")
+    return ConversationHandler.END
 
 
 async def list_products_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

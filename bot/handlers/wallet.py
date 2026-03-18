@@ -167,10 +167,13 @@ async def admin_topup_approve_callback(
     updated_user = increment_user_balance(topup["user_id"], int(topup.get("amount", 0)))
     update_topup_status(topup_id, "approved")
 
-    await query.edit_message_text(
-        f"✅ Top-up #{topup_id} disetujui.\nSaldo baru: {_format_currency(int(updated_user.get('balance', 0)))}",
-        parse_mode="Markdown",
+    confirmation = (
+        f"✅ Top-up #{topup_id} disetujui.\nSaldo baru: {_format_currency(int(updated_user.get('balance', 0)))}"
     )
+    if query.message.photo or query.message.document:
+        await query.edit_message_caption(caption=confirmation, parse_mode="Markdown")
+    else:
+        await query.edit_message_text(confirmation, parse_mode="Markdown")
 
     try:
         await context.bot.send_message(
@@ -179,6 +182,22 @@ async def admin_topup_approve_callback(
         )
     except Exception as exc:  # pragma: no cover
         logger.error("Failed to notify user for top-up approval: %s", exc)
+
+    if PAYMENT_CHANNEL_ID:
+        try:
+            user_label = f"@{topup.get('username')}" if topup.get("username") else f"User ID: {topup.get('user_id')}"
+            await context.bot.send_message(
+                chat_id=PAYMENT_CHANNEL_ID,
+                text=(
+                    f"✅ Top-up #{topup_id} *disetujui* oleh admin.\n"
+                    f"👤 {user_label}\n"
+                    f"💰 Nominal: {_format_currency(int(topup.get('amount', 0)))}\n"
+                    f"Saldo akhir: {_format_currency(int(updated_user.get('balance', 0)))}"
+                ),
+                parse_mode="Markdown",
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.error("Failed to notify channel for top-up approval: %s", exc)
 
 
 async def admin_topup_reject_callback(
@@ -198,11 +217,19 @@ async def admin_topup_reject_callback(
         await query.edit_message_text("❌ Top-up tidak ditemukan.")
         return
     if topup.get("status") != "pending":
-        await query.edit_message_text("ℹ️ Top-up sudah diproses.")
+        if query.message.photo or query.message.document:
+            await query.edit_message_caption(caption="ℹ️ Top-up sudah diproses.")
+        else:
+            await query.edit_message_text("ℹ️ Top-up sudah diproses.")
         return
 
     update_topup_status(topup_id, "rejected")
-    await query.edit_message_text(f"❌ Top-up #{topup_id} ditolak.", parse_mode="Markdown")
+    if query.message.photo or query.message.document:
+        await query.edit_message_caption(
+            caption=f"❌ Top-up #{topup_id} ditolak.", parse_mode="Markdown"
+        )
+    else:
+        await query.edit_message_text(f"❌ Top-up #{topup_id} ditolak.", parse_mode="Markdown")
 
     try:
         await context.bot.send_message(
