@@ -1,7 +1,12 @@
 """Order flow handlers (place order, confirm, view history)."""
 
+import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import (
+    datetime,
+    timedelta,
+    timezone,
+)
 from urllib.parse import quote_plus
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
@@ -309,116 +314,126 @@ async def confirm_balance_payment_callback(
     await query.answer()
 
     message_id = query.message.message_id if query.message else None
-    confirmations = context.user_data.setdefault("confirmed_payments", {})
+    lock: asyncio.Lock | None = None
     if message_id is not None:
-        existing = confirmations.get(message_id)
-        if existing == CONFIRM_PROCESSING:
-            await query.answer("Pesanan sedang diproses, mohon tunggu.", show_alert=True)
+        locks = context.application.bot_data.setdefault("confirm_locks", {})
+        lock = locks.setdefault(message_id, asyncio.Lock())
+
+    async def _process_confirmation() -> None:
+        confirmations = context.user_data.setdefault("confirmed_payments", {})
+        if message_id is not None:
+            existing = confirmations.get(message_id)
+            if existing == CONFIRM_PROCESSING:
+                await query.answer("Pesanan sedang diproses, mohon tunggu.", show_alert=True)
+                return
+            if existing:
+                await query.answer(f"Pesanan #{existing} sudah dikonfirmasi.", show_alert=True)
+                return
+
+        parts = query.data.split("_")
+        product_id = int(parts[2])
+        try:
+            quantity = int(parts[3])
+        except (IndexError, ValueError):
+            quantity = _get_quantity(context, product_id)
+        quantity = max(1, quantity)
+
+        user = query.from_user
+        product = fetch_product(product_id)
+        if not product:
+            await query.edit_message_text("❌ Produk tidak ditemukan.")
             return
-        if existing:
-            await query.answer(f"Pesanan #{existing} sudah dikonfirmasi.", show_alert=True)
-            return
 
-    parts = query.data.split("_")
-    product_id = int(parts[2])
-    try:
-        quantity = int(parts[3])
-    except (IndexError, ValueError):
-        quantity = _get_quantity(context, product_id)
-    quantity = max(1, quantity)
-
-    user = query.from_user
-    product = fetch_product(product_id)
-    if not product:
-        await query.edit_message_text("❌ Produk tidak ditemukan.")
-        return
-
-    available = get_available_stock(product_id)
-    if available < quantity:
-        await query.edit_message_text(
-            f"❌ Stok tidak mencukupi. Stok tersedia: {available}.",
-            parse_mode="Markdown",
-        )
-        return
-
-    balance = get_user_balance(user.id)
-    price = int(product.get("price", 0))
-    total = price * quantity
-    if balance < total:
-        await query.edit_message_text(
-            f"❌ Saldo kamu kurang. Total {_format_currency(total)}, saldo {_format_currency(balance)}.",
-            parse_mode="Markdown",
-        )
-        return
-
-    # Extra safety: skip duplicate confirmations for the same product/quantity recently processed
-    recent_orders = fetch_user_orders(user.id, limit=1, offset=0)
-    if recent_orders:
-        recent = recent_orders[0]
-        created_at = _parse_datetime(recent.get("created_at"))
-        within_duplicate_window = True
-        if created_at:
-            within_duplicate_window = (datetime.now(timezone.utc) - created_at) < DUPLICATE_PREVENTION_WINDOW
-        else:
-            # If timestamp is missing, err on the safe side by treating it as a recent action.
-            within_duplicate_window = True
-        if (
-            recent.get("payment_method") == "Saldo"
-            and recent.get("status") in {"paid_balance", "delivered"}
-            and int(recent.get("product_id") or 0) == product_id
-            and int(recent.get("quantity") or 1) == quantity
-            and within_duplicate_window
-        ):
-            if message_id is not None:
-                confirmations[message_id] = recent.get("id")
-            await query.answer("Pesanan ini sudah dikonfirmasi sebelumnya.", show_alert=True)
+        available = get_available_stock(product_id)
+        if available < quantity:
             await query.edit_message_text(
-                f"Pesanan #{recent.get('id')} sudah kami proses. Cek inbox kamu.",
+                f"❌ Stok tidak mencukupi. Stok tersedia: {available}.",
                 parse_mode="Markdown",
             )
             return
 
-    if message_id is not None:
-        confirmations[message_id] = CONFIRM_PROCESSING
-
-    order = create_order(
-        user_id=user.id,
-        product_id=product_id,
-        username=user.username,
-        quantity=quantity,
-        payment_method="Saldo",
-        total_price=total,
-    )
-    increment_user_balance(user.id, -total, username=user.username)
-    update_order_status(order["id"], "paid_balance")
-
-    delivered = await _deliver_account(context, {**order, "quantity": quantity}, product, refund_on_fail=True)
-    status_line = (
-        f"✅ Pembayaran berhasil. Saldo dipotong {_format_currency(total)}.\n"
-        f"Pesanan #{order['id']} diproses otomatis."
-    )
-    await query.edit_message_text(status_line, parse_mode="Markdown")
-
-    if message_id is not None:
-        confirmations[message_id] = order["id"]
-
-    if PAYMENT_CHANNEL_ID:
-        note = (
-            "Pembayaran otomatis dengan saldo. Sudah dikirim."
-            if delivered
-            else "Pembayaran saldo sukses, menunggu stok."
-        )
-        context.application.create_task(
-            _send_admin_notification(
-                context,
-                user,
-                {**order, "status": "paid_balance", "quantity": quantity, "total_price": total},
-                product,
-                payment_method="Saldo",
-                note=note,
-                with_actions=False,
+        balance = get_user_balance(user.id)
+        price = int(product.get("price", 0))
+        total = price * quantity
+        if balance < total:
+            await query.edit_message_text(
+                f"❌ Saldo kamu kurang. Total {_format_currency(total)}, saldo {_format_currency(balance)}.",
+                parse_mode="Markdown",
             )
+            return
+
+        # Extra safety: skip duplicate confirmations for the same product/quantity recently processed
+        recent_orders = fetch_user_orders(user.id, limit=1, offset=0)
+        if recent_orders:
+            recent = recent_orders[0]
+            created_at = _parse_datetime(recent.get("created_at"))
+            if created_at:
+                within_duplicate_window = (datetime.now(timezone.utc) - created_at) < DUPLICATE_PREVENTION_WINDOW
+            else:
+                # If timestamp is missing, err on the safe side by treating it as a recent action.
+                within_duplicate_window = True
+            if (
+                recent.get("payment_method") == "Saldo"
+                and recent.get("status") in {"paid_balance", "delivered"}
+                and int(recent.get("product_id") or 0) == product_id
+                and int(recent.get("quantity") or 1) == quantity
+                and within_duplicate_window
+            ):
+                if message_id is not None:
+                    confirmations[message_id] = recent.get("id")
+                await query.answer("Pesanan ini sudah dikonfirmasi sebelumnya.", show_alert=True)
+                await query.edit_message_text(
+                    f"Pesanan #{recent.get('id')} sudah kami proses. Cek inbox kamu.",
+                    parse_mode="Markdown",
+                )
+                return
+
+        if message_id is not None:
+            confirmations[message_id] = CONFIRM_PROCESSING
+
+        order = create_order(
+            user_id=user.id,
+            product_id=product_id,
+            username=user.username,
+            quantity=quantity,
+            payment_method="Saldo",
+            total_price=total,
         )
+        increment_user_balance(user.id, -total, username=user.username)
+        update_order_status(order["id"], "paid_balance")
+
+        delivered = await _deliver_account(context, {**order, "quantity": quantity}, product, refund_on_fail=True)
+        status_line = (
+            f"✅ Pembayaran berhasil. Saldo dipotong {_format_currency(total)}.\n"
+            f"Pesanan #{order['id']} diproses otomatis."
+        )
+        await query.edit_message_text(status_line, parse_mode="Markdown")
+
+        if message_id is not None:
+            confirmations[message_id] = order["id"]
+
+        if PAYMENT_CHANNEL_ID:
+            note = (
+                "Pembayaran otomatis dengan saldo. Sudah dikirim."
+                if delivered
+                else "Pembayaran saldo sukses, menunggu stok."
+            )
+            context.application.create_task(
+                _send_admin_notification(
+                    context,
+                    user,
+                    {**order, "status": "paid_balance", "quantity": quantity, "total_price": total},
+                    product,
+                    payment_method="Saldo",
+                    note=note,
+                    with_actions=False,
+                )
+            )
+
+    if lock:
+        async with lock:
+            return await _process_confirmation()
+    return await _process_confirmation()
 
 
 async def pay_with_qris_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -227,6 +227,8 @@ def fetch_user_orders(user_id: int, *, limit: int | None = None, offset: int = 0
         .order("created_at", desc=True)
     )
     if limit is not None:
+        if limit <= 0:
+            return []
         start = max(0, offset)
         end = start + max(limit, 0) - 1
         query = query.range(start, end)
