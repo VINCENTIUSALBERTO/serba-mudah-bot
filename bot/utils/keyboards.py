@@ -7,11 +7,11 @@ from bot.config import ADMIN_USERNAME
 def main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """Return the main-menu keyboard."""
     buttons = [
-        [InlineKeyboardButton("🛒 Katalog Produk", callback_data="catalog")],
-        [
-            InlineKeyboardButton("📦 Pesanan Saya", callback_data="my_orders"),
-            InlineKeyboardButton("ℹ️ Bantuan", callback_data="help"),
-        ],
+        [InlineKeyboardButton("📦 Katalog", callback_data="catalog")],
+        [InlineKeyboardButton("📋 Pesanan Saya", callback_data="my_orders")],
+        [InlineKeyboardButton("💰 Top-Up Saldo", callback_data="topup_start")],
+        [InlineKeyboardButton("💵 Cek Saldo", callback_data="balance_check")],
+        [InlineKeyboardButton("❓ Bantuan", callback_data="help")],
     ]
     if is_admin:
         buttons.append([InlineKeyboardButton("🛠 Admin", callback_data="admin_help")])
