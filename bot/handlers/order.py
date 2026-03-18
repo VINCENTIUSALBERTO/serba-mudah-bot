@@ -350,15 +350,18 @@ async def confirm_balance_payment_callback(
     if recent_orders:
         recent = recent_orders[0]
         created_at = _parse_datetime(recent.get("created_at"))
-        recent_age_ok = True
+        within_duplicate_window = True
         if created_at:
-            recent_age_ok = (datetime.now(timezone.utc) - created_at) < timedelta(minutes=5)
+            within_duplicate_window = (datetime.now(timezone.utc) - created_at) < timedelta(minutes=5)
+        else:
+            # If timestamp is missing, err on the safe side by treating it as a recent action.
+            within_duplicate_window = True
         if (
             recent.get("payment_method") == "Saldo"
             and recent.get("status") in {"paid_balance", "delivered"}
             and int(recent.get("product_id") or 0) == product_id
             and int(recent.get("quantity") or 1) == quantity
-            and recent_age_ok
+            and within_duplicate_window
         ):
             if message_id is not None:
                 confirmations[message_id] = recent.get("id")

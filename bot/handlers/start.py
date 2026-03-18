@@ -30,7 +30,7 @@ def _user_commands_text(is_admin_user: bool) -> str:
 
 
 def _build_start_text(user, balance: int, is_admin_user: bool) -> str:
-    username = f"@{user.username}" if user.username else "-"
+    username = f"@{user.username}" if user.username else "Tidak ada"
     admin_note = "\n🛠 Kamu terdaftar sebagai *admin*." if is_admin_user else ""
     return (
         f"{WELCOME_TITLE}\n\n"
