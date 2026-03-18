@@ -94,3 +94,14 @@ def admin_order_keyboard(order_id: int) -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+def admin_topup_keyboard(topup_id: int) -> InlineKeyboardMarkup:
+    """Keyboard for admin to approve or reject a top-up."""
+    buttons = [
+        [
+            InlineKeyboardButton("✅ Approve", callback_data=f"topup_approve_{topup_id}"),
+            InlineKeyboardButton("❌ Reject", callback_data=f"topup_reject_{topup_id}"),
+        ]
+    ]
+    return InlineKeyboardMarkup(buttons)

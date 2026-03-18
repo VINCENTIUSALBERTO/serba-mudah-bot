@@ -102,6 +102,24 @@ create table orders (
   status      text        not null default 'pending',
   created_at  timestamptz not null default now()
 );
+
+-- Tabel users (saldo)
+create table users (
+  id          bigint primary key,        -- Telegram user ID
+  username    text,
+  balance     numeric not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+-- Tabel top-up saldo
+create table topups (
+  id               bigint generated always as identity primary key,
+  user_id          bigint not null references users(id),
+  amount           numeric not null,
+  status           text not null default 'pending', -- pending/approved/rejected
+  proof_message_id bigint,
+  created_at       timestamptz not null default now()
+);
 ```
 
 ---
@@ -126,3 +144,10 @@ python main.py
 | Notifikasi admin | Kirim detail pesanan ke channel admin |
 | Setujui/Tolak pesanan | Tombol aksi khusus admin |
 | `/stats` (admin) | Statistik bot |
+| `/balance` / `/saldo` | Cek saldo pengguna |
+| `/topup <nominal>` | Ajukan top-up saldo (manual transfer, admin approve) |
+| `/addsaldo <user_id> <nominal>` (admin) | Tambah saldo pengguna secara langsung |
+| `/add_product` (admin) | Tambah produk baru |
+| `/edit_product` (admin) | Ubah harga/deskripsi produk |
+| `/delete_product` (admin) | Nonaktifkan/hapus produk |
+| `/list_products` (admin) | Lihat semua produk (termasuk nonaktif) |

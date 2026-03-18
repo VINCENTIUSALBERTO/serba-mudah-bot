@@ -17,6 +17,10 @@ from bot.handlers.admin import (
     admin_approve_callback,
     admin_reject_callback,
     admin_stats_command,
+    add_product_command,
+    delete_product_command,
+    edit_product_command,
+    list_products_command,
 )
 from bot.handlers.catalog import catalog_callback, product_detail_callback
 from bot.handlers.order import (
@@ -25,6 +29,13 @@ from bot.handlers.order import (
     order_callback,
 )
 from bot.handlers.start import help_callback, main_menu_callback, start
+from bot.handlers.wallet import (
+    addsaldo_command,
+    admin_topup_approve_callback,
+    admin_topup_reject_callback,
+    balance_command,
+    topup_command,
+)
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -42,6 +53,13 @@ def build_application() -> Application:
     # ------------------------------------------------------------------
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats_command))
+    app.add_handler(CommandHandler(["balance", "saldo"], balance_command))
+    app.add_handler(CommandHandler("topup", topup_command))
+    app.add_handler(CommandHandler("addsaldo", addsaldo_command))
+    app.add_handler(CommandHandler("add_product", add_product_command))
+    app.add_handler(CommandHandler("edit_product", edit_product_command))
+    app.add_handler(CommandHandler("delete_product", delete_product_command))
+    app.add_handler(CommandHandler("list_products", list_products_command))
 
     # ------------------------------------------------------------------
     # Inline-button (CallbackQuery) handlers
@@ -69,6 +87,12 @@ def build_application() -> Application:
     )
     app.add_handler(
         CallbackQueryHandler(admin_reject_callback, pattern=r"^admin_reject_\d+$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(admin_topup_approve_callback, pattern=r"^topup_approve_\d+$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(admin_topup_reject_callback, pattern=r"^topup_reject_\d+$")
     )
 
     return app

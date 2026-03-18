@@ -5,6 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
+from bot.database import ensure_user, get_user_balance
 from bot.utils.keyboards import main_menu_keyboard, help_keyboard
 
 logger = logging.getLogger(__name__)
@@ -26,6 +27,10 @@ HELP_TEXT = (
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle the /start command — show the main menu."""
+    user = update.effective_user
+    ensure_user(user.id, user.username)
+    context.user_data["balance"] = get_user_balance(user.id)
+
     await update.message.reply_text(
         WELCOME_TEXT,
         parse_mode="Markdown",
