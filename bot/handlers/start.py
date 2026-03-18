@@ -5,7 +5,7 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from bot.utils.keyboards import main_menu_keyboard
+from bot.utils.keyboards import main_menu_keyboard, help_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -51,5 +51,5 @@ async def help_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.edit_message_text(
         HELP_TEXT,
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=help_keyboard(),
     )

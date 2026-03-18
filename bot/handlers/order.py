@@ -10,7 +10,7 @@ from bot.database import create_order, fetch_product, fetch_user_orders
 from bot.utils.keyboards import (
     admin_order_keyboard,
     confirm_order_keyboard,
-    main_menu_keyboard,
+    main_menu_keyboard, order_history_keyboard, payment_method_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,11 +53,10 @@ async def order_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def confirm_order_callback(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
+        update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Create the order in Supabase and notify the admin channel."""
     query = update.callback_query
-    await query.answer()
+    await query.answer()  # Respons instan
 
     product_id = int(query.data.split("_")[1])
     user = query.from_user
@@ -67,21 +66,25 @@ async def confirm_order_callback(
         await query.edit_message_text("❌ Produk tidak ditemukan.")
         return
 
-    order = create_order(
-        user_id=user.id,
-        product_id=product_id,
-        username=user.username,
-    )
+    order = create_order(user_id=user.id, product_id=product_id, username=user.username)
 
-    # Notify the buyer
+    # Respons user langsung - JANGAN tunggu notifikasi admin
     await query.edit_message_text(
         f"✅ Pesanan #{order['id']} berhasil dibuat!\n\n{PAYMENT_INFO}",
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=payment_method_keyboard(),
     )
 
-    # Notify the admin channel (if configured)
+    # Kirim notifikasi admin di background
     if PAYMENT_CHANNEL_ID:
+        context.application.create_task(
+            _send_admin_notification(context, user, order, product)
+        )
+
+
+async def _send_admin_notification(context, user, order, product):
+    """Kirim notifikasi admin tanpa mengubah UX user."""
+    try:
         user_label = f"@{user.username}" if user.username else f"User ID: {user.id}"
         admin_text = (
             f"🛒 *Pesanan Baru #{order['id']}*\n\n"
@@ -96,6 +99,8 @@ async def confirm_order_callback(
             parse_mode="Markdown",
             reply_markup=admin_order_keyboard(order["id"]),
         )
+    except Exception as e:
+        logger.error(f"Failed to send admin notification: {e}")
 
 
 async def my_orders_callback(
@@ -127,5 +132,5 @@ async def my_orders_callback(
     await query.edit_message_text(
         "\n".join(lines),
         parse_mode="Markdown",
-        reply_markup=main_menu_keyboard(),
+        reply_markup=order_history_keyboard(),
     )

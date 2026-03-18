@@ -21,8 +21,14 @@ async def catalog_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         await query.edit_message_text("😔 Belum ada produk yang tersedia saat ini.")
         return
 
+    text = (
+        "👤 *User Profile*\n"
+        f"Nama: {query.from_user.name}\n"
+        f"Saldo: Rp {context.user_data.get('balance', 0):,}\n\n"
+       "🛒 *Katalog Produk*\nPilih produk yang ingin kamu beli: ")
+
     await query.edit_message_text(
-        "🛒 *Katalog Produk*\n\nPilih produk yang ingin kamu beli:",
+        text,
         parse_mode="Markdown",
         reply_markup=catalog_keyboard(products),
     )
@@ -43,6 +49,9 @@ async def product_detail_callback(
         return
 
     text = (
+        "👤 *User Profile*\n"
+        f"Nama: {query.from_user.name}\n"
+        f"Saldo: Rp {context.user_data.get('balance', 0):,}\n\n"
         f"📦 *{product['name']}*\n\n"
         f"💰 Harga: Rp {product['price']:,}\n"
         f"📝 Deskripsi: {product.get('description', '-')}\n\n"

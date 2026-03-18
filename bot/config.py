@@ -26,6 +26,11 @@ ADMIN_IDS: list[int] = [
 ]
 
 # ---------------------------------------------------------------------------
+# Admin Username (Telegram username for contact link)
+# ---------------------------------------------------------------------------
+ADMIN_USERNAME: str = os.getenv("ADMIN_USERNAME", "support")
+
+# ---------------------------------------------------------------------------
 # Optional: payment-confirmation channel / group
 # ---------------------------------------------------------------------------
 PAYMENT_CHANNEL_ID: int | None = (

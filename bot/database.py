@@ -1,5 +1,6 @@
 """Supabase client singleton."""
-
+from functools import lru_cache
+import time
 from supabase import create_client, Client
 from bot.config import SUPABASE_URL, SUPABASE_KEY
 
@@ -18,10 +19,25 @@ def get_client() -> Client:
 # Helper query functions
 # ---------------------------------------------------------------------------
 
+_catalog_cache = {"data": None, "timestamp": None}
+CACHE_TTL = 300  # 5 menit
+
+
 def fetch_catalog() -> list[dict]:
-    """Return all active products from the *products* table."""
+    """Return all active products with caching."""
+    global _catalog_cache
+    now = time.time()
+
+    # Gunakan cache jika masih fresh
+    if _catalog_cache["data"] and (now - _catalog_cache["timestamp"]) < CACHE_TTL:
+        return _catalog_cache["data"]
+
     response = get_client().table("products").select("*").eq("is_active", True).execute()
-    return response.data or []
+    data = response.data or []
+
+    # Update cache
+    _catalog_cache = {"data": data, "timestamp": now}
+    return data
 
 
 def fetch_product(product_id: int) -> dict | None:
