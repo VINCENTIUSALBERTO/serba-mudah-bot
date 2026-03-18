@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
+from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from bot.config import PAYMENT_CHANNEL_ID
@@ -292,8 +293,12 @@ def _parse_datetime(raw: str | None) -> datetime | None:
     if not raw:
         return None
     try:
-        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except Exception:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            return None
         return None
 
 
@@ -470,10 +475,10 @@ async def pay_with_qris_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.edit_message_media(
             media=InputMediaPhoto(media=qr_url, caption=caption, parse_mode="Markdown")
         )
-    except Exception:
+    except TelegramError:
         try:
             await query.edit_message_text("📲 QRIS telah dikirim sebagai gambar di bawah.")
-        except Exception:
+        except TelegramError:
             logger.debug("Unable to edit message before sending QRIS photo.")
         await context.bot.send_photo(
             chat_id=query.message.chat_id,
