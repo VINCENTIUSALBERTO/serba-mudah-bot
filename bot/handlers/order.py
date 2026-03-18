@@ -1,6 +1,7 @@
 """Order flow handlers (place order, confirm, view history)."""
 
 import logging
+from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
@@ -26,6 +27,7 @@ from bot.utils.keyboards import (
 )
 
 logger = logging.getLogger(__name__)
+CONFIRM_PROCESSING = "processing"
 
 # Payment instructions sent to the buyer after order creation
 PAYMENT_INFO = (
@@ -286,6 +288,16 @@ async def pay_with_balance_callback(update: Update, context: ContextTypes.DEFAUL
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=keyboard)
 
 
+def _parse_datetime(raw: str | None) -> datetime | None:
+    """Parse ISO datetime string to aware datetime."""
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
 async def confirm_balance_payment_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -297,7 +309,7 @@ async def confirm_balance_payment_callback(
     confirmations = context.user_data.setdefault("confirmed_payments", {})
     if message_id is not None:
         existing = confirmations.get(message_id)
-        if existing == "processing":
+        if existing == CONFIRM_PROCESSING:
             await query.answer("Pesanan sedang diproses, mohon tunggu.", show_alert=True)
             return
         if existing:
@@ -336,8 +348,30 @@ async def confirm_balance_payment_callback(
         )
         return
 
+    # Extra safety: skip duplicate confirmations for the same product/quantity recently processed
+    recent_orders = fetch_user_orders(user.id, limit=1, offset=0)
+    if recent_orders:
+        recent = recent_orders[0]
+        created_at = _parse_datetime(recent.get("created_at"))
+        recent_age = (datetime.now(timezone.utc) - created_at) if created_at else None
+        if (
+            recent.get("payment_method") == "Saldo"
+            and recent.get("status") in {"paid_balance", "delivered"}
+            and int(recent.get("product_id") or 0) == product_id
+            and int(recent.get("quantity") or 1) == quantity
+            and (recent_age is None or recent_age < timedelta(minutes=5))
+        ):
+            if message_id is not None:
+                confirmations[message_id] = recent.get("id")
+            await query.answer("Pesanan ini sudah dikonfirmasi sebelumnya.", show_alert=True)
+            await query.edit_message_text(
+                f"Pesanan #{recent.get('id')} sudah kami proses. Cek inbox kamu.",
+                parse_mode="Markdown",
+            )
+            return
+
     if message_id is not None:
-        confirmations[message_id] = "processing"
+        confirmations[message_id] = CONFIRM_PROCESSING
 
     order = create_order(
         user_id=user.id,
