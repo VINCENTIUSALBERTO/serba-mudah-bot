@@ -106,7 +106,7 @@ async def add_product_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     try:
         price = int(price_str)
     except ValueError:
-        await update.message.reply_text("Harga harus berupa angka. Contoh: /add_product Netflix 50000|Akun shared")
+        await update.message.reply_text("Harga harus berupa angka. Contoh: /add_product Netflix|50000|Akun shared")
         return
 
     product = add_product(name=name, price=price, description=description)
@@ -187,7 +187,7 @@ async def delete_product_command(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("❌ Produk tidak ditemukan.")
         return
 
-    await update.message.reply_text(f"🗑️ Produk ID {product_id} di-nonaktifkan.")
+    await update.message.reply_text(f"🗑️ Produk ID {product_id} dinonaktifkan.")
 
 
 async def list_products_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
