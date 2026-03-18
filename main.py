@@ -1,10 +1,17 @@
 """Entry point for Serba Mudah Bot.
 
 Run with:
-    python main.py
+    python main.py                    # Long-polling mode
+    python main.py --webhook          # Webhook mode
 """
 
+import os
+import sys
 import logging
+from dotenv import load_dotenv
+from telegram.ext import Application
+
+load_dotenv()
 
 from telegram.ext import (
     Application,
@@ -15,7 +22,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.config import BOT_TOKEN
+from bot.config import BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PORT, USE_WEBHOOK
 from bot.handlers.admin import (
     ADD_PRODUCT_ACCOUNTS,
     ADD_PRODUCT_DESC,
@@ -43,8 +50,6 @@ from bot.handlers.admin import (
 from bot.handlers.catalog import catalog_callback, product_detail_callback, stockout_callback
 from bot.handlers.order import (
     confirm_balance_payment_callback,
-    decrease_quantity_callback,
-    increase_quantity_callback,
     my_orders_callback,
     order_callback,
     pay_with_balance_callback,
@@ -145,8 +150,6 @@ def build_application() -> Application:
         CallbackQueryHandler(product_detail_callback, pattern=r"^product_\d+$")
     )
     app.add_handler(CallbackQueryHandler(stockout_callback, pattern=r"^stockout_\d+$"))
-    app.add_handler(CallbackQueryHandler(increase_quantity_callback, pattern=r"^increase_\d+$"))
-    app.add_handler(CallbackQueryHandler(decrease_quantity_callback, pattern=r"^decrease_\d+$"))
 
     # Orders
     app.add_handler(CallbackQueryHandler(order_callback, pattern=r"^order_\d+$"))
@@ -177,10 +180,31 @@ def build_application() -> Application:
 
 
 def main() -> None:
-    """Start the bot using long-polling."""
+    """Start the bot using either long-polling or webhook."""
     logger.info("Starting Serba Mudah Bot…")
     app = build_application()
-    app.run_polling(drop_pending_updates=True)
+
+    # Check if webhook mode is enabled
+    use_webhook = "--webhook" in sys.argv or USE_WEBHOOK
+
+    if use_webhook:
+        if not WEBHOOK_URL:
+            logger.error("WEBHOOK_URL is not configured in .env!")
+            sys.exit(1)
+
+        logger.info(f"Starting bot in WEBHOOK mode on port {WEBHOOK_PORT}")
+        logger.info(f"Webhook URL: {WEBHOOK_URL}")
+
+        # Set webhook
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=WEBHOOK_PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=f"{WEBHOOK_URL}/{BOT_TOKEN}",
+        )
+    else:
+        logger.info("Starting bot in POLLING mode")
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

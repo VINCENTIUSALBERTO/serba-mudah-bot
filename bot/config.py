@@ -38,3 +38,11 @@ PAYMENT_CHANNEL_ID: int | None = (
     if os.getenv("PAYMENT_CHANNEL_ID")
     else None
 )
+
+# ---------------------------------------------------------------------------
+# Webhook configuration (optional for webhook mode)
+# ---------------------------------------------------------------------------
+WEBHOOK_URL: str | None = os.getenv("WEBHOOK_URL", None)
+WEBHOOK_PORT: int = int(os.getenv("PORT", 8443))
+USE_WEBHOOK: bool = WEBHOOK_URL is not None
+
