@@ -4,7 +4,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bot.config import ADMIN_USERNAME
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
+def main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """Return the main-menu keyboard."""
     buttons = [
         [InlineKeyboardButton("🛒 Katalog Produk", callback_data="catalog")],
@@ -13,6 +13,8 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
             InlineKeyboardButton("ℹ️ Bantuan", callback_data="help"),
         ],
     ]
+    if is_admin:
+        buttons.append([InlineKeyboardButton("🛠 Admin", callback_data="admin_help")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -40,11 +42,24 @@ def help_keyboard() -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(buttons)
 
-def order_history_keyboard() -> InlineKeyboardMarkup:
-    """Keyboard for the order history page."""
-    buttons = [
-        [InlineKeyboardButton("🔙 Kembali", callback_data="main_menu")]
-    ]
+def order_history_keyboard(
+    offset: int = 0, limit: int = 10, has_prev: bool = False, has_next: bool = False
+) -> InlineKeyboardMarkup:
+    """Keyboard for the order history page with paging."""
+    buttons: list[list[InlineKeyboardButton]] = []
+    nav_buttons: list[InlineKeyboardButton] = []
+    if has_prev:
+        prev_offset = max(0, offset - limit)
+        nav_buttons.append(
+            InlineKeyboardButton("⬅️ Lebih baru", callback_data=f"my_orders_{prev_offset}")
+        )
+    if has_next:
+        nav_buttons.append(
+            InlineKeyboardButton("➡️ Lebih lama", callback_data=f"my_orders_{offset + limit}")
+        )
+    if nav_buttons:
+        buttons.append(nav_buttons)
+    buttons.append([InlineKeyboardButton("🔙 Kembali", callback_data="main_menu")])
     return InlineKeyboardMarkup(buttons)
 
 

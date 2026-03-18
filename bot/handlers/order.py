@@ -3,10 +3,10 @@
 import logging
 from urllib.parse import quote_plus
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
-from bot.config import PAYMENT_CHANNEL_ID
+from bot.config import PAYMENT_CHANNEL_ID, ADMIN_IDS
 from bot.database import (
     create_order,
     fetch_order,
@@ -129,35 +129,55 @@ async def _send_admin_notification(
 async def my_orders_callback(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    """Show the user their order history."""
+    """Show the user their order history with paging."""
     query = update.callback_query
     await query.answer()
 
-    orders = fetch_user_orders(query.from_user.id)
+    raw_offset = (query.data or "").split("_")
+    try:
+        offset = int(raw_offset[2]) if len(raw_offset) > 2 else 0
+    except ValueError:
+        offset = 0
+    offset = max(0, offset)
+    page_size = 10
+
+    orders = fetch_user_orders(query.from_user.id, limit=page_size + 1, offset=offset)
 
     if not orders:
         await query.edit_message_text(
             "📦 Kamu belum memiliki pesanan.\n\nKembali ke menu utama:",
-            reply_markup=main_menu_keyboard(),
+            reply_markup=main_menu_keyboard(is_admin=query.from_user.id in ADMIN_IDS),
         )
         return
 
-    lines = ["📦 *Pesanan Saya*\n"]
-    for o in orders:
+    has_next = len(orders) > page_size
+    visible_orders = orders[:page_size]
+    has_prev = offset > 0
+
+    lines = [
+        "📦 *Pesanan Saya*",
+        f"Menampilkan {len(visible_orders)} pesanan terbaru (halaman {offset // page_size + 1}).\n",
+    ]
+    for o in visible_orders:
         product_info = o.get("products") or {}
         product_name = product_info.get("name", "?")
         price = product_info.get("price", 0)
         qty = int(o.get("quantity") or 1)
         total = int(o.get("total_price") or price * qty)
+        status = (o.get("status") or "pending").replace("_", " ").title()
+        created = (o.get("created_at") or "")[:10]
         lines.append(
-            f"• Order #{o['id']} — {product_name} x{qty} "
-            f"(Total {_format_currency(total)}) — *{o['status'].upper()}*"
+            f"• #{o['id']} — {product_name} x{qty} ({_format_currency(total)}) "
+            f"— *{status}* — {created}"
         )
+    lines.append("\nGunakan tombol untuk melihat pesanan lain.")
 
     await query.edit_message_text(
         "\n".join(lines),
         parse_mode="Markdown",
-        reply_markup=order_history_keyboard(),
+        reply_markup=order_history_keyboard(
+            offset=offset, limit=page_size, has_prev=has_prev, has_next=has_next
+        ),
     )
 
 
@@ -271,6 +291,17 @@ async def confirm_balance_payment_callback(
     query = update.callback_query
     await query.answer()
 
+    message_id = query.message.message_id if query.message else None
+    confirmations = context.user_data.setdefault("confirmed_payments", {})
+    if message_id is not None:
+        existing = confirmations.get(message_id)
+        if existing == "processing":
+            await query.answer("Pesanan sedang diproses, mohon tunggu.", show_alert=True)
+            return
+        if existing:
+            await query.answer(f"Pesanan #{existing} sudah dikonfirmasi.", show_alert=True)
+            return
+
     parts = query.data.split("_")
     product_id = int(parts[2])
     try:
@@ -303,6 +334,9 @@ async def confirm_balance_payment_callback(
         )
         return
 
+    if message_id is not None:
+        confirmations[message_id] = "processing"
+
     order = create_order(
         user_id=user.id,
         product_id=product_id,
@@ -320,6 +354,9 @@ async def confirm_balance_payment_callback(
         f"Pesanan #{order['id']} diproses otomatis."
     )
     await query.edit_message_text(status_line, parse_mode="Markdown")
+
+    if message_id is not None:
+        confirmations[message_id] = order["id"]
 
     if PAYMENT_CHANNEL_ID:
         note = (
@@ -379,22 +416,31 @@ async def pay_with_qris_callback(update: Update, context: ContextTypes.DEFAULT_T
     qr_payload = f"ORDER#{order['id']}|{product['name']}|{total_price}"
     qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=320x320&data={quote_plus(qr_payload)}"
 
-    text = (
+    caption = (
         "💳 *Pembayaran QRIS*\n\n"
         f"📦 {product['name']}\n"
         f"🔢 Jumlah: {quantity}\n"
         f"💰 Harga: Rp {int(product.get('price', 0)):,}\n"
         f"💵 Total: {_format_currency(total_price)}\n"
         f"📝 {product.get('description', '-')}\n\n"
-        "Scan QR di bawah ini dengan aplikasi pembayaran kamu. "
-        "Setelah pembayaran terverifikasi oleh admin, akun akan dikirim otomatis."
+        f"QRIS untuk Order #{order['id']}\n"
+        "Scan kode di bawah, lalu tunggu admin memverifikasi pembayaranmu."
     )
-    await query.edit_message_text(text, parse_mode="Markdown")
-    await context.bot.send_photo(
-        chat_id=query.message.chat_id,
-        photo=qr_url,
-        caption=f"QRIS untuk Order #{order['id']}",
-    )
+    try:
+        await query.edit_message_media(
+            media=InputMediaPhoto(media=qr_url, caption=caption, parse_mode="Markdown")
+        )
+    except Exception:
+        try:
+            await query.edit_message_text("📲 QRIS telah dikirim sebagai gambar di bawah.")
+        except Exception:
+            logger.debug("Unable to edit message before sending QRIS photo.")
+        await context.bot.send_photo(
+            chat_id=query.message.chat_id,
+            photo=qr_url,
+            caption=caption,
+            parse_mode="Markdown",
+        )
 
     if PAYMENT_CHANNEL_ID:
         context.application.create_task(

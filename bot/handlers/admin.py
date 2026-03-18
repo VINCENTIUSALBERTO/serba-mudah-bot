@@ -18,6 +18,7 @@ from bot.database import (
     update_product_fields,
 )
 from bot.handlers.order import _deliver_account
+from bot.utils.keyboards import main_menu_keyboard
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,48 @@ logger = logging.getLogger(__name__)
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+
+def _admin_help_text() -> str:
+    return (
+        "🛠 *Menu Admin*\n\n"
+        "Perintah dan tombol yang tersedia untuk admin:\n"
+        "• `/add_product` — Tambah produk baru\n"
+        "• `/edit_product` — Ubah harga/deskripsi produk\n"
+        "• `/delete_product` — Nonaktifkan produk\n"
+        "• `/add_stock` — Tambah stok akun\n"
+        "• `/list_products` — Lihat semua produk\n"
+        "• `/addsaldo <user_id> <nominal>` — Tambah saldo user\n"
+        "• `/stats` — Statistik ringkas\n"
+        "• Tombol Approve/Reject pada notifikasi pesanan/top-up\n\n"
+        "Gunakan tombol di bawah untuk kembali ke menu utama."
+    )
+
+
+async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show admin-only help, either via /admin or button."""
+    if update.message:
+        user = update.effective_user
+        if not is_admin(user.id):
+            await update.message.reply_text("⛔ Perintah ini hanya untuk admin.")
+            return
+        await update.message.reply_text(
+            _admin_help_text(),
+            parse_mode="Markdown",
+            reply_markup=main_menu_keyboard(is_admin=True),
+        )
+        return
+
+    query = update.callback_query
+    await query.answer()
+    if not is_admin(query.from_user.id):
+        await query.answer("⛔ Kamu bukan admin.", show_alert=True)
+        return
+    await query.edit_message_text(
+        _admin_help_text(),
+        parse_mode="Markdown",
+        reply_markup=main_menu_keyboard(is_admin=True),
+    )
 
 
 async def admin_approve_callback(

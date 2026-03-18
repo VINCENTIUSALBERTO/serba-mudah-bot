@@ -217,16 +217,19 @@ def fetch_order(order_id: int) -> dict | None:
     return response.data[0] if response.data else None
 
 
-def fetch_user_orders(user_id: int) -> list[dict]:
-    """Return all orders for a given Telegram user ID."""
-    response = (
+def fetch_user_orders(user_id: int, *, limit: int | None = None, offset: int = 0) -> list[dict]:
+    """Return orders for a given Telegram user ID."""
+    query = (
         get_client()
         .table("orders")
         .select("*, products(name, price)")
         .eq("user_id", user_id)
         .order("created_at", desc=True)
-        .execute()
     )
+    if limit is not None:
+        end = max(offset, 0) + max(limit - 1, 0)
+        query = query.range(max(offset, 0), end)
+    response = query.execute()
     return response.data or []
 
 

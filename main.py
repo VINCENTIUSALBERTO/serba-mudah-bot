@@ -47,7 +47,13 @@ from bot.handlers.admin import (
     finalize_add_stock,
     list_products_command,
 )
-from bot.handlers.catalog import catalog_callback, product_detail_callback, stockout_callback
+from bot.handlers.catalog import (
+    catalog_callback,
+    decrease_quantity_callback,
+    increase_quantity_callback,
+    product_detail_callback,
+    stockout_callback,
+)
 from bot.handlers.order import (
     confirm_balance_payment_callback,
     my_orders_callback,
@@ -55,7 +61,7 @@ from bot.handlers.order import (
     pay_with_balance_callback,
     pay_with_qris_callback,
 )
-from bot.handlers.start import help_callback, main_menu_callback, start
+from bot.handlers.start import help_callback, help_command, main_menu_callback, start, unknown_command
 from bot.handlers.wallet import (
     WAITING_TOPUP_PROOF,
     addsaldo_command,
@@ -66,6 +72,7 @@ from bot.handlers.wallet import (
     receive_topup_proof,
     topup_command,
 )
+from bot.handlers.admin import admin_help
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -82,6 +89,8 @@ def build_application() -> Application:
     # Command handlers
     # ------------------------------------------------------------------
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("admin", admin_help))
     app.add_handler(CommandHandler("stats", admin_stats_command))
     app.add_handler(CommandHandler(["balance", "saldo"], balance_command))
     app.add_handler(
@@ -149,6 +158,12 @@ def build_application() -> Application:
     app.add_handler(
         CallbackQueryHandler(product_detail_callback, pattern=r"^product_\d+$")
     )
+    app.add_handler(
+        CallbackQueryHandler(increase_quantity_callback, pattern=r"^increase_\d+$")
+    )
+    app.add_handler(
+        CallbackQueryHandler(decrease_quantity_callback, pattern=r"^decrease_\d+$")
+    )
     app.add_handler(CallbackQueryHandler(stockout_callback, pattern=r"^stockout_\d+$"))
 
     # Orders
@@ -160,9 +175,10 @@ def build_application() -> Application:
         )
     )
     app.add_handler(CallbackQueryHandler(pay_with_qris_callback, pattern=r"^pay_qris_\d+$"))
-    app.add_handler(CallbackQueryHandler(my_orders_callback, pattern="^my_orders$"))
+    app.add_handler(CallbackQueryHandler(my_orders_callback, pattern=r"^my_orders(?:_\d+)?$"))
 
     # Admin
+    app.add_handler(CallbackQueryHandler(admin_help, pattern="^admin_help$"))
     app.add_handler(
         CallbackQueryHandler(admin_approve_callback, pattern=r"^admin_approve_\d+$")
     )
@@ -175,6 +191,9 @@ def build_application() -> Application:
     app.add_handler(
         CallbackQueryHandler(admin_topup_reject_callback, pattern=r"^topup_reject_\d+$")
     )
+
+    # Unknown commands
+    app.add_handler(MessageHandler(filters.COMMAND, unknown_command))
 
     return app
 
