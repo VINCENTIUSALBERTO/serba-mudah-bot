@@ -156,7 +156,12 @@ async def admin_topup_approve_callback(
         await query.edit_message_text("❌ Top-up tidak ditemukan.")
         return
     if topup.get("status") != "pending":
-        await query.edit_message_text("ℹ️ Top-up sudah diproses.")
+        if query.message.photo or query.message.document:
+            # Gunakan ini jika pesannya berupa gambar/dokumen (berisi caption)
+            await query.edit_message_caption(caption="ℹ️ Top-up sudah diproses.")
+        else:
+            # Gunakan ini jika pesannya hanya teks biasa
+            await query.edit_message_text(text="ℹ️ Top-up sudah diproses.")
         return
 
     updated_user = increment_user_balance(topup["user_id"], int(topup.get("amount", 0)))
