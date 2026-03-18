@@ -20,7 +20,7 @@ def _user_commands_text(is_admin_user: bool) -> str:
         "• `/start` — Kembali ke menu utama",
         "• `/help` — Lihat semua perintah",
         "• `/balance` atau `/saldo` — Cek saldo",
-        "• `/topup <nominal>` — Ajukan top-up saldo",
+        "• `/topup` — Top up saldo (pilih auto atau manual)",
         "• Menu *Katalog Produk* — Lihat & beli produk",
         "• Menu *Pesanan Saya* — Riwayat pembelian",
     ]
