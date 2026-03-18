@@ -3,10 +3,11 @@
 import logging
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler
 
 from bot.config import PAYMENT_CHANNEL_ID
 from bot.database import (
+    attach_topup_proof,
     create_topup_request,
     ensure_user,
     fetch_topup,
@@ -19,6 +20,8 @@ from bot.handlers.order import PAYMENT_INFO
 from bot.utils.keyboards import admin_topup_keyboard
 
 logger = logging.getLogger(__name__)
+
+WAITING_TOPUP_PROOF = 1
 
 
 def _format_currency(amount: int) -> str:
@@ -34,35 +37,69 @@ async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await update.message.reply_text(f"💰 Saldo kamu: {_format_currency(balance)}")
 
 
-async def topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Create a manual top-up request."""
+async def topup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Create a manual top-up request and ask for proof."""
     user = update.effective_user
     ensure_user(user.id, user.username)
 
     if not context.args:
         await update.message.reply_text("Gunakan format: /topup <nominal>. Contoh: /topup 50000")
-        return
+        return ConversationHandler.END
 
     try:
         amount = int(context.args[0])
     except ValueError:
         await update.message.reply_text("Nominal harus berupa angka. Contoh: /topup 50000")
-        return
+        return ConversationHandler.END
 
     if amount <= 0:
         await update.message.reply_text("Nominal top-up harus lebih besar dari 0.")
-        return
+        return ConversationHandler.END
 
     topup = create_topup_request(user.id, amount)
+    context.user_data["pending_topup_id"] = topup["id"]
 
     await update.message.reply_text(
         f"🧾 Permintaan top-up #{topup['id']} dibuat.\n\n{PAYMENT_INFO}\n\n"
-        "Setelah transfer, kirim bukti pembayaran dan tunggu konfirmasi admin.",
+        "Balas dengan bukti transfer (foto/file) untuk diproses admin.",
         parse_mode="Markdown",
+    )
+    return WAITING_TOPUP_PROOF
+
+
+async def receive_topup_proof(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Handle uploaded transfer proof and notify admin."""
+    topup_id = context.user_data.get("pending_topup_id")
+    if not topup_id:
+        await update.message.reply_text("Tidak ada permintaan top-up yang menunggu. Gunakan /topup dulu.")
+        return ConversationHandler.END
+
+    proof_message_id = update.message.message_id
+    attach_topup_proof(topup_id, proof_message_id)
+
+    await update.message.reply_text(
+        f"✅ Bukti transfer diterima untuk top-up #{topup_id}. Admin akan memverifikasi secara manual."
     )
 
     if PAYMENT_CHANNEL_ID:
-        await _notify_admin_topup(context, user.id, user.username, topup["id"], amount)
+        await _notify_admin_topup(
+            context,
+            update.effective_user.id,
+            update.effective_user.username,
+            topup_id,
+            fetch_topup(topup_id).get("amount", 0),
+            proof_message_id=proof_message_id,
+        )
+
+    context.user_data.pop("pending_topup_id", None)
+    return ConversationHandler.END
+
+
+async def cancel_topup(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel the pending top-up request flow."""
+    context.user_data.pop("pending_topup_id", None)
+    await update.message.reply_text("❌ Proses top-up dibatalkan.")
+    return ConversationHandler.END
 
 
 async def _notify_admin_topup(
@@ -71,6 +108,7 @@ async def _notify_admin_topup(
     username: str | None,
     topup_id: int,
     amount: int,
+    proof_message_id: int | None = None,
 ) -> None:
     """Send a notification to admin channel for approval."""
     try:
@@ -81,12 +119,22 @@ async def _notify_admin_topup(
             f"💰 Nominal: {_format_currency(amount)}\n"
             f"📋 Status: Pending"
         )
-        await context.bot.send_message(
-            chat_id=PAYMENT_CHANNEL_ID,
-            text=text,
-            parse_mode="Markdown",
-            reply_markup=admin_topup_keyboard(topup_id),
-        )
+        if proof_message_id:
+            await context.bot.copy_message(
+                chat_id=PAYMENT_CHANNEL_ID,
+                from_chat_id=user_id,
+                message_id=proof_message_id,
+                caption=text,
+                parse_mode="Markdown",
+                reply_markup=admin_topup_keyboard(topup_id),
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=PAYMENT_CHANNEL_ID,
+                text=text,
+                parse_mode="Markdown",
+                reply_markup=admin_topup_keyboard(topup_id),
+            )
     except Exception as exc:  # pragma: no cover - guard rail
         logger.error("Failed to send admin top-up notification: %s", exc)
 

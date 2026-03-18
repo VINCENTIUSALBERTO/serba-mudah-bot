@@ -56,27 +56,22 @@ def product_detail_keyboard(product_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("➕", callback_data=f"increase_{product_id}"),
         ],
         [
-            InlineKeyboardButton("💰 Saldo", callback_data=f"order_{product_id}"
-            ),
-            InlineKeyboardButton("💳 QRIS", callback_data=f"order_{product_id}")
+            InlineKeyboardButton("💰 Saldo", callback_data=f"pay_balance_{product_id}"),
+            InlineKeyboardButton("💳 QRIS", callback_data=f"pay_qris_{product_id}"),
         ],
         [InlineKeyboardButton("🔙 Kembali", callback_data="catalog")],
     ]
     return InlineKeyboardMarkup(buttons)
 
 
-def confirm_order_keyboard(product_id: int) -> InlineKeyboardMarkup:
-    """Keyboard for order confirmation step."""
-    buttons = [
-        [InlineKeyboardButton("✅ Konfirmasi", callback_data=f"confirm_{product_id}")],
-        [InlineKeyboardButton("❌ Batalkan", callback_data=f"confirm_{product_id}")],
-    ]
-    return InlineKeyboardMarkup(buttons)
-
-def payment_method_keyboard() -> InlineKeyboardMarkup:
+def payment_method_keyboard(product_id: int) -> InlineKeyboardMarkup:
     """Keyboard for choosing payment method."""
     buttons = [
-        [InlineKeyboardButton("🔙 Menu utama", callback_data="main_menu")]
+        [
+            InlineKeyboardButton("💰 Bayar dengan saldo", callback_data=f"pay_balance_{product_id}"),
+            InlineKeyboardButton("💳 Bayar via QRIS", callback_data=f"pay_qris_{product_id}"),
+        ],
+        [InlineKeyboardButton("🔙 Kembali", callback_data="catalog")],
     ]
     return InlineKeyboardMarkup(buttons)
 

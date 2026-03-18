@@ -154,6 +154,18 @@ def update_topup_status(topup_id: int, status: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
+def attach_topup_proof(topup_id: int, proof_message_id: int) -> dict | None:
+    """Attach proof message ID to a top-up."""
+    response = (
+        get_client()
+        .table("topups")
+        .update({"proof_message_id": proof_message_id})
+        .eq("id", topup_id)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def create_order(user_id: int, product_id: int, username: str | None = None) -> dict:
     """Insert a new order and return the created row."""
     payload = {
@@ -173,6 +185,19 @@ def update_order_status(order_id: int, status: str) -> dict | None:
         .table("orders")
         .update({"status": status})
         .eq("id", order_id)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def fetch_order(order_id: int) -> dict | None:
+    """Fetch a single order with product relation if available."""
+    response = (
+        get_client()
+        .table("orders")
+        .select("*, products(*)")
+        .eq("id", order_id)
+        .limit(1)
         .execute()
     )
     return response.data[0] if response.data else None
@@ -246,3 +271,46 @@ def update_product_fields(
 def soft_delete_product(product_id: int) -> dict | None:
     """Mark a product as inactive instead of deleting permanently."""
     return update_product_fields(product_id, is_active=False)
+
+
+# ---------------------------------------------------------------------------
+# Product stock / accounts
+# ---------------------------------------------------------------------------
+
+
+def bulk_insert_accounts(product_id: int, accounts: list[str]) -> list[dict]:
+    """Insert multiple account credentials for a product."""
+    if not accounts:
+        return []
+    rows = [{"product_id": product_id, "credential": acc, "is_sold": False} for acc in accounts]
+    response = get_client().table("product_accounts").insert(rows).execute()
+    return response.data or []
+
+
+def reserve_product_account(product_id: int, order_id: int | None = None) -> dict | None:
+    """Reserve the first available account for a product and mark it sold."""
+    candidate = (
+        get_client()
+        .table("product_accounts")
+        .select("*")
+        .eq("product_id", product_id)
+        .eq("is_sold", False)
+        .limit(1)
+        .execute()
+    )
+    if not candidate.data:
+        return None
+
+    account = candidate.data[0]
+    update_payload = {"is_sold": True}
+    if order_id is not None:
+        update_payload["order_id"] = order_id
+
+    updated = (
+        get_client()
+        .table("product_accounts")
+        .update(update_payload)
+        .eq("id", account["id"])
+        .execute()
+    )
+    return updated.data[0] if updated.data else account

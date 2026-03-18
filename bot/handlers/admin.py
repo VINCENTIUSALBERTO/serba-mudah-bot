@@ -3,18 +3,29 @@
 import logging
 
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
 
 from bot.config import ADMIN_IDS
 from bot.database import (
     add_product,
+    bulk_insert_accounts,
     fetch_all_products,
+    fetch_order,
+    fetch_product,
     soft_delete_product,
     update_order_status,
     update_product_fields,
 )
+from bot.handlers.order import _deliver_account
 
 logger = logging.getLogger(__name__)
+
+(
+    ADD_PRODUCT_NAME,
+    ADD_PRODUCT_PRICE,
+    ADD_PRODUCT_DESC,
+    ADD_PRODUCT_ACCOUNTS,
+) = range(4)
 
 
 def is_admin(user_id: int) -> bool:
@@ -33,12 +44,26 @@ async def admin_approve_callback(
         return
 
     order_id = int(query.data.split("_")[2])
+    order = fetch_order(order_id)
+    if not order:
+        await query.edit_message_text("❌ Pesanan tidak ditemukan.")
+        return
+
+    product = (order.get("products") or {}) or fetch_product(order.get("product_id"))
+
+    if order.get("status") == "delivered":
+        await query.edit_message_text("Pesanan sudah dikirim ke user.")
+        return
+
     update_order_status(order_id, "approved")
 
     await query.edit_message_text(
         f"✅ Pesanan #{order_id} telah *disetujui*.",
         parse_mode="Markdown",
     )
+
+    if product:
+        await _deliver_account(context, order, product, refund_on_fail=False)
 
 
 async def admin_reject_callback(
@@ -53,12 +78,21 @@ async def admin_reject_callback(
         return
 
     order_id = int(query.data.split("_")[2])
+    order = fetch_order(order_id)
     update_order_status(order_id, "rejected")
 
     await query.edit_message_text(
         f"❌ Pesanan #{order_id} telah *ditolak*.",
         parse_mode="Markdown",
     )
+
+    if order:
+        try:
+            await context.bot.send_message(
+                chat_id=order["user_id"], text=f"❌ Pesanan #{order_id} ditolak oleh admin."
+            )
+        except Exception:  # pragma: no cover
+            logger.warning("Failed to notify user about rejection for order %s", order_id)
 
 
 async def admin_stats_command(
@@ -83,36 +117,86 @@ def _parse_pipe_args(raw: str, expected_parts: int) -> list[str] | None:
     return parts
 
 
-async def add_product_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Admin: add new product using pipe-separated args."""
+async def add_product_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Admin: start interactive flow to add a product."""
     if not is_admin(update.effective_user.id):
         await update.message.reply_text("⛔ Perintah ini hanya untuk admin.")
-        return
+        return ConversationHandler.END
 
-    if not update.message or not update.message.text:
-        return
+    context.user_data["add_product"] = {}
+    await update.message.reply_text("🆕 Nama produk?")
+    return ADD_PRODUCT_NAME
 
-    if len(update.message.text.split(" ", 1)) < 2:
-        await update.message.reply_text("Format: /add_product Nama Produk|Harga|Deskripsi")
-        return
 
-    payload = update.message.text.split(" ", 1)[1]
-    parts = _parse_pipe_args(payload, 3)
-    if not parts:
-        await update.message.reply_text("Format: /add_product Nama Produk|Harga|Deskripsi")
-        return
+async def add_product_price(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Capture price from admin."""
+    name = (update.message.text or "").strip()
+    if not name:
+        await update.message.reply_text("Nama produk tidak boleh kosong. Coba lagi.")
+        return ADD_PRODUCT_NAME
+    context.user_data.setdefault("add_product", {})["name"] = name
+    await update.message.reply_text("💰 Harga produk? (angka)")
+    return ADD_PRODUCT_PRICE
 
-    name, price_str, description = parts[0], parts[1], parts[2]
+
+async def add_product_description(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Capture product description."""
     try:
-        price = int(price_str)
+        price = int((update.message.text or "").replace(".", "").replace(",", "").strip())
     except ValueError:
-        await update.message.reply_text("Harga harus berupa angka. Contoh: /add_product Netflix|50000|Akun shared")
-        return
+        await update.message.reply_text("Harga harus berupa angka. Coba lagi.")
+        return ADD_PRODUCT_PRICE
 
-    product = add_product(name=name, price=price, description=description)
+    context.user_data.setdefault("add_product", {})["price"] = price
+    await update.message.reply_text("📝 Deskripsi produk?")
+    return ADD_PRODUCT_DESC
+
+
+async def add_product_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Ask for account stock lines."""
+    description = (update.message.text or "").strip()
+    context.user_data.setdefault("add_product", {})["description"] = description
     await update.message.reply_text(
-        f"✅ Produk baru ditambahkan (ID {product['id']}): {product['name']} — Rp {product['price']:,}"
+        "📧 Kirim akun (satu per baris) dengan format `email:pass`.\n"
+        "Akun akan otomatis dikirim ke pembeli setelah pembayaran berhasil.",
+        parse_mode="Markdown",
     )
+    return ADD_PRODUCT_ACCOUNTS
+
+
+async def finalize_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Create product and stock from collected answers."""
+    accounts_raw = update.message.text or ""
+    accounts = [line.strip() for line in accounts_raw.splitlines() if line.strip()]
+    data = context.user_data.get("add_product") or {}
+    if not data.get("name") or not data.get("price"):
+        await update.message.reply_text("Data tidak lengkap, silakan ulangi /add_product.")
+        return ConversationHandler.END
+
+    product = add_product(
+        name=data["name"],
+        price=int(data["price"]),
+        description=data.get("description"),
+    )
+    try:
+        inserted = bulk_insert_accounts(product["id"], accounts)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.error("Failed to insert accounts for product %s: %s", product["id"], exc)
+        inserted = []
+
+    await update.message.reply_text(
+        f"✅ Produk baru ditambahkan (ID {product['id']}): {product['name']} — Rp {product['price']:,}\n"
+        f"Stok akun tersimpan: {len(inserted)}"
+    )
+    context.user_data.pop("add_product", None)
+    return ConversationHandler.END
+
+
+async def cancel_add_product(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancel add product flow."""
+    context.user_data.pop("add_product", None)
+    await update.message.reply_text("❌ Penambahan produk dibatalkan.")
+    return ConversationHandler.END
 
 
 async def edit_product_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

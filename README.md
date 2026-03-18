@@ -145,9 +145,12 @@ python main.py
 | Setujui/Tolak pesanan | Tombol aksi khusus admin |
 | `/stats` (admin) | Statistik bot |
 | `/balance` / `/saldo` | Cek saldo pengguna |
-| `/topup <nominal>` | Ajukan top-up saldo (manual transfer, admin approve) |
+| `/topup <nominal>` | Ajukan top-up saldo, kirim bukti transfer, admin approve |
 | `/addsaldo <user_id> <nominal>` (admin) | Tambah saldo pengguna secara langsung |
-| `/add_product` (admin) | Tambah produk baru |
+| `/add_product` (admin) | Tambah produk baru via alur tanya-jawab + stok akun |
 | `/edit_product` (admin) | Ubah harga/deskripsi produk |
 | `/delete_product` (admin) | Nonaktifkan/hapus produk |
 | `/list_products` (admin) | Lihat semua produk (termasuk nonaktif) |
+| Pembayaran saldo | Potong saldo otomatis bila mencukupi |
+| Pembayaran QRIS (demo) | Tampilkan QR code + detail produk, admin verifikasi |
+| Auto-delivery | Akun dikirim otomatis setelah pembayaran sukses |

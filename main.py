@@ -10,30 +10,46 @@ from telegram.ext import (
     Application,
     CallbackQueryHandler,
     CommandHandler,
+    ConversationHandler,
+    MessageHandler,
+    filters,
 )
 
 from bot.config import BOT_TOKEN
 from bot.handlers.admin import (
+    ADD_PRODUCT_ACCOUNTS,
+    ADD_PRODUCT_DESC,
+    ADD_PRODUCT_NAME,
+    ADD_PRODUCT_PRICE,
     admin_approve_callback,
     admin_reject_callback,
     admin_stats_command,
+    add_product_accounts,
     add_product_command,
+    add_product_description,
+    add_product_price,
+    cancel_add_product,
     delete_product_command,
     edit_product_command,
+    finalize_add_product,
     list_products_command,
 )
 from bot.handlers.catalog import catalog_callback, product_detail_callback
 from bot.handlers.order import (
-    confirm_order_callback,
     my_orders_callback,
     order_callback,
+    pay_with_balance_callback,
+    pay_with_qris_callback,
 )
 from bot.handlers.start import help_callback, main_menu_callback, start
 from bot.handlers.wallet import (
+    WAITING_TOPUP_PROOF,
     addsaldo_command,
     admin_topup_approve_callback,
     admin_topup_reject_callback,
     balance_command,
+    cancel_topup,
+    receive_topup_proof,
     topup_command,
 )
 
@@ -54,9 +70,41 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", admin_stats_command))
     app.add_handler(CommandHandler(["balance", "saldo"], balance_command))
-    app.add_handler(CommandHandler("topup", topup_command))
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("topup", topup_command)],
+            states={
+                WAITING_TOPUP_PROOF: [
+                    MessageHandler(
+                        (filters.PHOTO | filters.Document.ALL | filters.TEXT) & (~filters.COMMAND),
+                        receive_topup_proof,
+                    )
+                ]
+            },
+            fallbacks=[CommandHandler("cancel", cancel_topup)],
+        )
+    )
     app.add_handler(CommandHandler("addsaldo", addsaldo_command))
-    app.add_handler(CommandHandler("add_product", add_product_command))
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("add_product", add_product_command)],
+            states={
+                ADD_PRODUCT_NAME: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_product_price)
+                ],
+                ADD_PRODUCT_PRICE: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_product_description)
+                ],
+                ADD_PRODUCT_DESC: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_product_accounts)
+                ],
+                ADD_PRODUCT_ACCOUNTS: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), finalize_add_product)
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_add_product)],
+        )
+    )
     app.add_handler(CommandHandler("edit_product", edit_product_command))
     app.add_handler(CommandHandler("delete_product", delete_product_command))
     app.add_handler(CommandHandler("list_products", list_products_command))
@@ -76,9 +124,8 @@ def build_application() -> Application:
 
     # Orders
     app.add_handler(CallbackQueryHandler(order_callback, pattern=r"^order_\d+$"))
-    app.add_handler(
-        CallbackQueryHandler(confirm_order_callback, pattern=r"^confirm_\d+$")
-    )
+    app.add_handler(CallbackQueryHandler(pay_with_balance_callback, pattern=r"^pay_balance_\d+$"))
+    app.add_handler(CallbackQueryHandler(pay_with_qris_callback, pattern=r"^pay_qris_\d+$"))
     app.add_handler(CallbackQueryHandler(my_orders_callback, pattern="^my_orders$"))
 
     # Admin
