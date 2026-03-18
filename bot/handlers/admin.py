@@ -49,7 +49,7 @@ async def admin_approve_callback(
         await query.edit_message_text("❌ Pesanan tidak ditemukan.")
         return
 
-    product = (order.get("products") or {}) or fetch_product(order.get("product_id"))
+    product = order.get("products") or fetch_product(order.get("product_id"))
 
     if order.get("status") == "delivered":
         await query.edit_message_text("Pesanan sudah dikirim ke user.")

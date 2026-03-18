@@ -123,6 +123,7 @@ async def my_orders_callback(
 
 async def _deliver_account(context: ContextTypes.DEFAULT_TYPE, order: dict, product: dict, refund_on_fail: bool = False) -> bool:
     """Reserve an account and deliver it to the user."""
+    price = int(product.get("price", 0))
     account = reserve_product_account(product["id"], order.get("id"))
     if not account:
         await context.bot.send_message(
@@ -132,10 +133,10 @@ async def _deliver_account(context: ContextTypes.DEFAULT_TYPE, order: dict, prod
         update_order_status(order["id"], "waiting_stock")
         if refund_on_fail:
             try:
-                increment_user_balance(order["user_id"], int(product.get("price", 0)))
+                increment_user_balance(order["user_id"], price)
                 await context.bot.send_message(
                     chat_id=order["user_id"],
-                    text="Saldo kamu dikembalikan karena stok kosong. Kamu bisa mencoba lagi nanti.",
+                    text=f"Saldo kamu dikembalikan Rp {price:,} karena stok kosong. Kamu bisa mencoba lagi nanti.",
                 )
                 update_order_status(order["id"], "refunded")
             except Exception as exc:  # pragma: no cover
@@ -185,7 +186,7 @@ async def pay_with_balance_callback(update: Update, context: ContextTypes.DEFAUL
     update_order_status(order["id"], "paid_balance")
 
     await query.edit_message_text(
-        f"✅ Pembayaran berhasil. Saldo dipotong {price:,}.\nPesanan #{order['id']} diproses otomatis.",
+        f"✅ Pembayaran berhasil. Saldo dipotong Rp {price:,}.\nPesanan #{order['id']} diproses otomatis.",
         parse_mode="Markdown",
     )
 
