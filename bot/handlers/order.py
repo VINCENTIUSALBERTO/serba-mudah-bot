@@ -6,7 +6,7 @@ from urllib.parse import quote_plus
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
 from telegram.ext import ContextTypes
 
-from bot.config import PAYMENT_CHANNEL_ID, ADMIN_IDS
+from bot.config import PAYMENT_CHANNEL_ID
 from bot.database import (
     create_order,
     fetch_order,
@@ -142,11 +142,13 @@ async def my_orders_callback(
     page_size = 10
 
     orders = fetch_user_orders(query.from_user.id, limit=page_size + 1, offset=offset)
+    from bot.handlers.admin import is_admin as _is_admin  # local import to avoid circular dependency
+    is_admin_user = _is_admin(query.from_user.id)
 
     if not orders:
         await query.edit_message_text(
             "📦 Kamu belum memiliki pesanan.\n\nKembali ke menu utama:",
-            reply_markup=main_menu_keyboard(is_admin=query.from_user.id in ADMIN_IDS),
+            reply_markup=main_menu_keyboard(is_admin=is_admin_user),
         )
         return
 
@@ -156,7 +158,7 @@ async def my_orders_callback(
 
     lines = [
         "📦 *Pesanan Saya*",
-        f"Menampilkan {len(visible_orders)} pesanan terbaru (halaman {offset // page_size + 1}).\n",
+        f"Menampilkan {len(visible_orders)} pesanan (halaman {offset // page_size + 1}, urut terbaru).\n",
     ]
     for o in visible_orders:
         product_info = o.get("products") or {}
