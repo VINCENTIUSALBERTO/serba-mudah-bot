@@ -129,3 +129,37 @@ def admin_topup_keyboard(topup_id: int) -> InlineKeyboardMarkup:
         ]
     ]
     return InlineKeyboardMarkup(buttons)
+
+
+def topup_type_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard for choosing top-up type (auto or manual)."""
+    buttons = [
+        [InlineKeyboardButton("🤖 Top Up Otomatis", callback_data="topup_auto")],
+        [InlineKeyboardButton("💵 Top Up Manual", callback_data="topup_manual")],
+        [InlineKeyboardButton("❌ Batal", callback_data="topup_cancel")],
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def topup_amount_keyboard() -> InlineKeyboardMarkup:
+    """Keyboard with quick-select nominal buttons for manual top-up."""
+    amounts = [10_000, 25_000, 50_000, 100_000, 200_000, 500_000]
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for amount in amounts:
+        label = f"Rp {amount:,}"
+        row.append(InlineKeyboardButton(label, callback_data=f"topup_amount_{amount}"))
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("❌ Batal", callback_data="topup_cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def topup_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Single cancel button shown while waiting for proof."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Batal", callback_data="topup_cancel")]]
+    )

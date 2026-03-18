@@ -357,3 +357,94 @@ def reserve_product_account(product_id: int, order_id: int | None = None) -> dic
     """Reserve the first available account for a product and mark it sold."""
     accounts = reserve_product_accounts(product_id, 1, order_id)
     return accounts[0] if accounts else None
+
+
+# ---------------------------------------------------------------------------
+# Payment methods (admin-managed)
+# ---------------------------------------------------------------------------
+
+
+def fetch_payment_methods() -> list[dict]:
+    """Return all active payment methods. Returns [] if table is missing."""
+    try:
+        response = (
+            get_client()
+            .table("payment_methods")
+            .select("*")
+            .eq("is_active", True)
+            .order("id")
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
+
+
+def fetch_payment_method(pm_id: int) -> dict | None:
+    """Return a single payment method by ID."""
+    try:
+        response = (
+            get_client()
+            .table("payment_methods")
+            .select("*")
+            .eq("id", pm_id)
+            .limit(1)
+            .execute()
+        )
+        return response.data[0] if response.data else None
+    except Exception:
+        return None
+
+
+def fetch_all_payment_methods() -> list[dict]:
+    """Return all payment methods including inactive ones."""
+    try:
+        response = (
+            get_client()
+            .table("payment_methods")
+            .select("*")
+            .order("id")
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
+
+
+def add_payment_method(
+    provider_name: str,
+    account_number: str,
+    account_holder: str,
+    qris_file_id: str | None = None,
+) -> dict:
+    """Insert a new payment method row."""
+    payload = {
+        "provider_name": provider_name,
+        "account_number": account_number,
+        "account_holder": account_holder,
+        "qris_file_id": qris_file_id,
+        "is_active": True,
+    }
+    response = get_client().table("payment_methods").insert(payload).execute()
+    return response.data[0]
+
+
+def update_payment_method(pm_id: int, **kwargs) -> dict | None:
+    """Update selected fields of a payment method."""
+    allowed = {"provider_name", "account_number", "account_holder", "qris_file_id", "is_active"}
+    updates = {k: v for k, v in kwargs.items() if k in allowed}
+    if not updates:
+        return fetch_payment_method(pm_id)
+    response = (
+        get_client()
+        .table("payment_methods")
+        .update(updates)
+        .eq("id", pm_id)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def delete_payment_method(pm_id: int) -> dict | None:
+    """Soft-delete (deactivate) a payment method."""
+    return update_payment_method(pm_id, is_active=False)

@@ -24,27 +24,45 @@ from telegram.ext import (
 
 from bot.config import BOT_TOKEN, WEBHOOK_URL, WEBHOOK_PORT, USE_WEBHOOK
 from bot.handlers.admin import (
+    ADD_PAYMENT_HOLDER,
+    ADD_PAYMENT_NUMBER,
+    ADD_PAYMENT_PROVIDER,
+    ADD_PAYMENT_QRIS,
     ADD_PRODUCT_ACCOUNTS,
     ADD_PRODUCT_DESC,
     ADD_PRODUCT_NAME,
     ADD_PRODUCT_PRICE,
     ADD_STOCK_ACCOUNTS,
     ADD_STOCK_PRODUCT,
+    EDIT_PAYMENT_CHOOSE_FIELD,
+    EDIT_PAYMENT_NEW_VALUE,
     admin_approve_callback,
     admin_reject_callback,
     admin_stats_command,
+    add_payment_command,
+    add_payment_number,
+    add_payment_holder,
+    add_payment_qris,
     add_stock_command,
     add_stock_product,
     add_product_accounts,
     add_product_command,
     add_product_description,
     add_product_price,
+    cancel_add_payment,
     cancel_add_stock,
     cancel_add_product,
+    cancel_edit_payment,
+    delete_payment_command,
     delete_product_command,
+    edit_payment_command,
+    edit_payment_choose_field,
+    edit_payment_new_value,
     edit_product_command,
+    finalize_add_payment,
     finalize_add_product,
     finalize_add_stock,
+    list_payments_command,
     list_products_command,
 )
 from bot.handlers.catalog import (
@@ -63,14 +81,22 @@ from bot.handlers.order import (
 )
 from bot.handlers.start import help_callback, help_command, main_menu_callback, start, unknown_command
 from bot.handlers.wallet import (
+    TOPUP_TYPE_SELECTION,
+    WAITING_TOPUP_AMOUNT,
     WAITING_TOPUP_PROOF,
     addsaldo_command,
     admin_topup_approve_callback,
     admin_topup_reject_callback,
     balance_command,
     cancel_topup,
+    cancel_topup_callback,
     receive_topup_proof,
+    topup_auto_callback,
     topup_command,
+    topup_manual_start_callback,
+    topup_quick_amount_callback,
+    topup_receive_amount,
+    topup_start_callback,
 )
 from bot.handlers.admin import admin_help
 
@@ -95,16 +121,36 @@ def build_application() -> Application:
     app.add_handler(CommandHandler(["balance", "saldo"], balance_command))
     app.add_handler(
         ConversationHandler(
-            entry_points=[CommandHandler("topup", topup_command)],
+            entry_points=[
+                CommandHandler("topup", topup_command),
+                CallbackQueryHandler(topup_start_callback, pattern="^topup_start$"),
+            ],
             states={
+                TOPUP_TYPE_SELECTION: [
+                    CallbackQueryHandler(topup_auto_callback, pattern="^topup_auto$"),
+                    CallbackQueryHandler(topup_manual_start_callback, pattern="^topup_manual$"),
+                ],
+                WAITING_TOPUP_AMOUNT: [
+                    CallbackQueryHandler(
+                        topup_quick_amount_callback, pattern=r"^topup_amount_\d+$"
+                    ),
+                    MessageHandler(
+                        filters.TEXT & (~filters.COMMAND), topup_receive_amount
+                    ),
+                ],
                 WAITING_TOPUP_PROOF: [
                     MessageHandler(
-                        (filters.PHOTO | filters.Document.ALL | filters.TEXT) & (~filters.COMMAND),
+                        (filters.PHOTO | filters.Document.ALL | filters.TEXT)
+                        & (~filters.COMMAND),
                         receive_topup_proof,
                     )
-                ]
+                ],
             },
-            fallbacks=[CommandHandler("cancel", cancel_topup)],
+            fallbacks=[
+                CommandHandler("cancel", cancel_topup),
+                CallbackQueryHandler(cancel_topup_callback, pattern="^topup_cancel$"),
+            ],
+            allow_reentry=True,
         )
     )
     app.add_handler(CommandHandler("addsaldo", addsaldo_command))
@@ -145,6 +191,52 @@ def build_application() -> Application:
     app.add_handler(CommandHandler("edit_product", edit_product_command))
     app.add_handler(CommandHandler("delete_product", delete_product_command))
     app.add_handler(CommandHandler("list_products", list_products_command))
+
+    # Payment method management (admin)
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("add_payment", add_payment_command)],
+            states={
+                ADD_PAYMENT_PROVIDER: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_payment_number)
+                ],
+                ADD_PAYMENT_NUMBER: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_payment_holder)
+                ],
+                ADD_PAYMENT_HOLDER: [
+                    MessageHandler(filters.TEXT & (~filters.COMMAND), add_payment_qris)
+                ],
+                ADD_PAYMENT_QRIS: [
+                    MessageHandler(
+                        (filters.PHOTO | filters.Document.ALL | filters.TEXT)
+                        & (~filters.COMMAND),
+                        finalize_add_payment,
+                    )
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_add_payment)],
+        )
+    )
+    app.add_handler(
+        ConversationHandler(
+            entry_points=[CommandHandler("edit_payment", edit_payment_command)],
+            states={
+                EDIT_PAYMENT_CHOOSE_FIELD: [
+                    CallbackQueryHandler(edit_payment_choose_field, pattern=r"^epf_")
+                ],
+                EDIT_PAYMENT_NEW_VALUE: [
+                    MessageHandler(
+                        (filters.PHOTO | filters.Document.ALL | filters.TEXT)
+                        & (~filters.COMMAND),
+                        edit_payment_new_value,
+                    )
+                ],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_edit_payment)],
+        )
+    )
+    app.add_handler(CommandHandler("list_payments", list_payments_command))
+    app.add_handler(CommandHandler("delete_payment", delete_payment_command))
 
     # ------------------------------------------------------------------
     # Inline-button (CallbackQuery) handlers
