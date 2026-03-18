@@ -7,15 +7,12 @@ from telegram.ext import ContextTypes
 
 from bot.database import ensure_user, get_user_balance
 from bot.handlers.admin import is_admin
+from bot.utils.formatting import format_currency
 from bot.utils.keyboards import main_menu_keyboard, help_keyboard
 
 logger = logging.getLogger(__name__)
 
 WELCOME_TITLE = "👋 Selamat datang di *Serba Mudah Bot*!"
-
-
-def _format_currency(amount: int) -> str:
-    return f"Rp {int(amount):,}"
 
 
 def _user_commands_text(is_admin_user: bool) -> str:
@@ -41,7 +38,7 @@ def _build_start_text(user, balance: int, is_admin_user: bool) -> str:
         "👤 *Profil*\n"
         f"Nama: {user.full_name}\n"
         f"Username: {username}\n"
-        f"Saldo: {_format_currency(balance)}"
+        f"Saldo: {format_currency(balance)}"
         f"{admin_note}\n\n"
         "⚙️ *Perintah utama*\n"
         f"{_user_commands_text(is_admin_user)}\n\n"

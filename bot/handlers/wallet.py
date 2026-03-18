@@ -17,15 +17,12 @@ from bot.database import (
 )
 from bot.handlers.admin import is_admin
 from bot.handlers.order import PAYMENT_INFO
+from bot.utils.formatting import format_currency as _format_currency
 from bot.utils.keyboards import admin_topup_keyboard
 
 logger = logging.getLogger(__name__)
 
 WAITING_TOPUP_PROOF = 1
-
-
-def _format_currency(amount: int) -> str:
-    return f"Rp {amount:,}"
 
 
 async def balance_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

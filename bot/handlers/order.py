@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote_plus
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, InputMediaPhoto
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
 from telegram.ext import ContextTypes
 
 from bot.config import PAYMENT_CHANNEL_ID
@@ -19,6 +19,7 @@ from bot.database import (
     reserve_product_accounts,
     update_order_status,
 )
+from bot.utils.formatting import format_currency as _format_currency
 from bot.utils.keyboards import (
     admin_order_keyboard,
     main_menu_keyboard,
@@ -39,10 +40,6 @@ PAYMENT_INFO = (
     "Setelah transfer, kirim bukti pembayaran kepada admin.\n"
     "Pesanan kamu akan diproses setelah pembayaran dikonfirmasi. ✅"
 )
-
-
-def _format_currency(amount: int) -> str:
-    return f"Rp {int(amount):,}"
 
 
 def _get_quantity(context: ContextTypes.DEFAULT_TYPE, product_id: int, default: int = 1) -> int:
@@ -353,13 +350,15 @@ async def confirm_balance_payment_callback(
     if recent_orders:
         recent = recent_orders[0]
         created_at = _parse_datetime(recent.get("created_at"))
-        recent_age = (datetime.now(timezone.utc) - created_at) if created_at else None
+        recent_age_ok = True
+        if created_at:
+            recent_age_ok = (datetime.now(timezone.utc) - created_at) < timedelta(minutes=5)
         if (
             recent.get("payment_method") == "Saldo"
             and recent.get("status") in {"paid_balance", "delivered"}
             and int(recent.get("product_id") or 0) == product_id
             and int(recent.get("quantity") or 1) == quantity
-            and (recent_age is None or recent_age < timedelta(minutes=5))
+            and recent_age_ok
         ):
             if message_id is not None:
                 confirmations[message_id] = recent.get("id")
